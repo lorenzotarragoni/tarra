@@ -771,7 +771,9 @@ const run = (fn, ...args) => {
   const req = { k: API_KEY, fn, args };
   if (IN_GAS) return new Promise((res, rej) => { google.script.run.withSuccessHandler(r => (r && r.error ? rej(new Error(r.error)) : res(r && r.result))).withFailureHandler(rej).api(req); });
   // A text/plain POST needs no CORS preflight; Apps Script answers through a redirect that allows any origin.
-  return fetch(API_URL, { method: 'POST', body: JSON.stringify(req) })
+  const ctl = 'AbortController' in window ? new AbortController() : null, to = ctl && setTimeout(() => ctl.abort(), 30000);
+  return fetch(API_URL, { method: 'POST', body: JSON.stringify(req), signal: ctl ? ctl.signal : undefined })
+    .finally(() => clearTimeout(to))
     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(j => { if (j.error) throw new Error(j.error); return j.result; });
 };
@@ -877,8 +879,9 @@ async function pull() {
     if (!anyPending() && !toPush.length) setSync('ok');
   } catch (e) {
     fails++;
-    if (isKeyError(e)) { keyBad = true; setSync('err', 'Chiave non valida · tocca qui'); return; }
+    if (isKeyError(e)) { keyBad = true; setSync('err', 'Chiave non valida · tocca qui'); toast('Chiave non valida: tocca il pallino in alto per inserirla di nuovo.'); return; }
     setSync('err', navigator.onLine === false ? 'Offline: mostro i dati salvati qui' : 'Non riesco a leggere i dati, riprovo');
+    if (!P().length) toast('Non riesco a caricare i dati (' + String(e && e.message || e).slice(0, 80) + '). Riprovo tra poco.');
     setTimeout(pull, Math.min(60000, 5000 * fails));
   }
 }
@@ -2014,7 +2017,7 @@ if (!reduced) {
   world.style.transform = worldTransform(true);
   requestAnimationFrame(() => requestAnimationFrame(() => { world.classList.add('intro'); world.style.transform = worldTransform(false); setTimeout(() => { world.classList.remove('intro'); world.classList.add('ready'); }, 2700); }));
 } else world.classList.add('ready');
-if (mode === 'gas') { setSync('saving', hadCache ? 'Sincronizzo…' : 'Carico i dati…'); pull(); }
+if (mode === 'gas') { setSync('saving', hadCache ? 'Sincronizzo…' : 'Carico i dati…'); if (!P().length) toast('Carico i tuoi pianeti dal Foglio Google…'); pull(); }
 else setSync('local');
 })();
 window.__tsbOK = 1;
