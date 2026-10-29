@@ -134,6 +134,8 @@ p{margin:0}
 .world.focusing .planet:not(.sel) .globe,.world.focusing .planet:not(.sel) .lbl,.world.focusing .planet:not(.sel) .sat,.world.focusing .planet:not(.sel) .rb,.world.focusing .planet:not(.sel) .rf{opacity:.38}
 .world.focusing .planet:not(.sel) .hud,.world.focusing .planet:not(.sel) .aura{opacity:.18}
 .world.focusing .ring:not(.sel){opacity:.45}
+/* While a planet is open beside the system, the dimmed planets and the star stop their small spins: fewer layers redrawn per frame while you work in the panel. Orbits keep moving. */
+.world.focusing .planet:not(.sel) .pc *,.world.focusing .sun *,.world.focusing .sun::before{animation-play-state:paused}
 .planet .hit{position:absolute;border-radius:50%;--hr:max(22px, calc(var(--r) * 1.5));left:calc(var(--hr) * -1);top:calc(var(--hr) * -1);width:calc(var(--hr) * 2);height:calc(var(--hr) * 2)}
 .globe{width:calc(var(--r) * 2);height:calc(var(--r) * 2);border-radius:50%;overflow:hidden;isolation:isolate;
   background:radial-gradient(circle at 36% 30%, color-mix(in srgb, var(--c) 55%, #fff) 0, var(--c) 34%, color-mix(in srgb, var(--c) 32%, #050814) 80%);
@@ -255,7 +257,8 @@ h2{font:600 14px/1.2 var(--f-display);letter-spacing:.1em;text-transform:upperca
 h3{font:600 22px/1.15 var(--f-display);margin:0;text-wrap:balance}
 .big{font:600 32px/1 var(--f-display);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .unit{font:500 12px var(--f-mono);color:var(--ink-3);margin-left:6px;letter-spacing:.04em}
-.pos{color:var(--good)} .neg{color:var(--bad)}
+.pos{color:var(--good)} .neg{color:var(--bad)} .be{color:var(--ink-2)}
+.bechip{display:inline-block;font:600 9.5px/1 var(--f-mono);letter-spacing:.08em;padding:3px 5px;border:1px solid var(--line-2);color:var(--ice);vertical-align:middle}
 .pacmonths{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:6px}
 .pm{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
 .pm b{width:100%;aspect-ratio:1;max-height:34px;border:1px solid var(--line-2);background:var(--card-2)}
@@ -697,6 +700,11 @@ const fmtDate = (s, o = { day: 'numeric', month: 'short' }) => { const k = JSON.
 const num = v => { if (v === '' || v == null) return null; const n = Number(String(v).replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
 const sum = a => a.reduce((x, y) => x + y, 0);
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 });
+// Trading planets have their own currency (default dollars); TCUR is set from the planet being shown before its numbers are formatted.
+const MONEYF = {}; let TCUR = 'USD';
+const money = (n, sign, cur) => { const f = MONEYF[cur] || (MONEYF[cur] = new Intl.NumberFormat('it-IT', { style: 'currency', currency: cur, currencyDisplay: 'narrowSymbol', maximumFractionDigits: 2 })); const v = Number(n) || 0; return (v < 0 ? '−' : (sign && v > 0 ? '+' : '')) + f.format(Math.abs(v)); };
+const usd = (n, sign = false) => money(n, sign, TCUR);
+const tsym = () => ({ USD: '$', EUR: '€', GBP: '£', CHF: 'CHF' })[TCUR] || TCUR;
 const eur = (n, sign = false) => { const v = Number(n) || 0; const s = EUR.format(Math.abs(v)); return (v < 0 ? '−' : (sign && v > 0 ? '+' : '')) + s; };
 const compact = v => { const a = Math.abs(v); const s = a >= 1000 ? (a / 1000).toFixed(a >= 10000 ? 0 : 1).replace('.', ',') + 'k' : String(Math.round(a)); return (v < 0 ? '−' : '+') + s; };
 const fmtNum = v => (Math.round(v * 100) / 100).toLocaleString('it-IT');
@@ -730,7 +738,7 @@ const MARKETS = ['Futures', 'Forex', 'Azioni', 'Crypto', 'CFD', 'Opzioni'];
 const EMOTIONS = ['Calmo', 'Concentrato', 'Fiducioso', 'Ansioso', 'Impaziente', 'Frustrato', 'Euforico', 'Annoiato'];
 const DEFAULT_TAGS = ['A+ setup', 'Paziente', 'FOMO', 'Entrata anticipata', 'Uscita anticipata', 'Stop spostato', 'Size eccessiva', 'Revenge', 'Fuori piano', 'Overtrading'];
 const RANGES = [[7, '7 g'], [30, '30 g'], [90, '90 g'], ['ytd', 'Anno'], [0, 'Tutto']];
-const TF0 = { range: 30, dir: '', setup: '', symbol: '', tag: '', q: '' };
+const TF0 = { range: 30, dir: '', res: '', setup: '', symbol: '', tag: '', q: '' };
 const TYPES = {
   uni:     { label: 'Studio',      desc: 'Corsi, prove, argomenti e ore di studio',           def: () => ({ courses: [], exams: [], topics: [], sessions: [] }) },
   trading: { label: 'Trading',     desc: 'Journal completo: trade, giornale, statistiche',    def: () => ({ trades: [], days: {}, rules: [], tags: DEFAULT_TAGS.slice(), settings: { dailyLossLimit: null, startBalance: null, riskPct: null, maxTrades: null, pointValues: {} } }) },
@@ -754,7 +762,7 @@ function normalizeType(type, d) {
     else if (v && typeof v === 'object' && !Array.isArray(v) && (!out[k] || typeof out[k] !== 'object' || Array.isArray(out[k]))) out[k] = clone(v);
   }
   if (type === 'trading') {
-    out.settings = Object.assign({ dailyLossLimit: null, startBalance: null, riskPct: null, maxTrades: null, pointValues: {} }, out.settings);
+    out.settings = Object.assign({ dailyLossLimit: null, startBalance: null, riskPct: null, maxTrades: null, pointValues: {}, currency: 'USD', bePct: null }, out.settings);
     if (!out.settings.pointValues || typeof out.settings.pointValues !== 'object') out.settings.pointValues = {};
     out.trades.forEach(t => { if (t.timeIn == null) t.timeIn = t.time || ''; if (t.timeOut == null) t.timeOut = ''; if (!Array.isArray(t.tags)) t.tags = []; t.pnl = Number(t.pnl) || 0; });
   }
@@ -847,7 +855,9 @@ function seed() {
             { id: 't2', title: 'Ripasso generale di Economia Aziendale', area: 'Università', due: '2026-11-05', done: false }] });
 }
 
+let dataRev = 0; // bumps on every data change: cached panel views older than this are stale
 function commit(k) {
+  dataRev++;
   scheduleCache();
   if (mode !== 'gas') return;
   clearTimeout(timers[k]);
@@ -863,7 +873,7 @@ async function push(k) {
     else {
       const r = await run('saveDoc', k, JSON.stringify(D[k]), V[k] ?? null);
       if (r && r.conflict) {
-        D[k] = r.data; V[k] = r.v; ensure(); render();
+        D[k] = r.data; V[k] = r.v; dataRev++; ensure(); render();
         toast('Questa parte è cambiata da un altro dispositivo: ho caricato la versione più recente. Ripeti l\'ultima modifica.');
       } else if (r) V[k] = r.v;
     }
@@ -896,7 +906,7 @@ async function pull() {
       if (docs[k] || pending(k)) continue;
       if (V[k] == null) toPush.push(k); else { delete D[k]; delete V[k]; changed = true; }
     }
-    if (changed) { ensure(); scheduleCache(); render(); }
+    if (changed) { dataRev++; ensure(); scheduleCache(); render(); }
     fails = 0;
     toPush.forEach(k => commit(k));
     if (!anyPending() && !toPush.length) setSync('ok');
@@ -918,15 +928,32 @@ const courseName = (d, id) => (d.courses.find(c => c.id === id) || {}).name || '
 const upcomingExams = d => d.exams.filter(e => !e.done && daysUntil(e.date) >= 0).sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
 function studyMin(d, courseId, days = 7) { const from = ymd(addDays(new Date(), -(days - 1))); return sum(d.sessions.filter(s => (!courseId || s.courseId === courseId) && s.date >= from).map(s => +s.min || 0)); }
 const tkey = t => t.date + (t.timeIn || t.time || '') + t.id;
-const sortedTrades = d => d.trades.map(t => [tkey(t), t]).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0).map(x => x[1]);
+const STC = new WeakMap(); // sorted copy of a journal's trades, rebuilt only after the data changes
+const sortedTrades = d => { const c = STC.get(d); if (c && c.rev === dataRev && c.src === d.trades && c.n === d.trades.length) return c.list;
+  const list = d.trades.map(t => [tkey(t), t]).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0).map(x => x[1]); STC.set(d, { rev: dataRev, src: d.trades, n: d.trades.length, list }); return list; };
 function tradesSince(d, days) { if (!days) return sortedTrades(d); const from = ymd(addDays(new Date(), -(days - 1))); return sortedTrades(d).filter(t => t.date >= from); }
 const dayPnl = (d, date) => sum(d.trades.filter(t => t.date === date).map(t => +t.pnl || 0));
 const monthTrades = (d, ym = ymd().slice(0, 7)) => sortedTrades(d).filter(t => t.date.startsWith(ym));
+// Win / loss / break-even. A trade is break-even when marked so, or when it moved the account by less than the threshold
+// set in the journal settings (a % of the balance at the time of the trade: starting capital plus all earlier results).
+const OUTC = new WeakMap();
+function markOutcomes(d) {
+  TCUR = (d.settings && d.settings.currency) || 'USD';
+  const start = num(d.settings.startBalance), be = num(d.settings.bePct); let bal = start || 0;
+  for (const t of sortedTrades(d)) {
+    let o = t.pnl > 0 ? 'W' : t.pnl < 0 ? 'L' : 'B';
+    if (t.be) o = 'B'; else if (be && start && o !== 'B' && Math.abs(t.pnl) < Math.abs(bal) * be / 100) o = 'B';
+    OUTC.set(t, o); bal += +t.pnl || 0;
+  }
+}
+const outcome = t => OUTC.get(t) || (t.be ? 'B' : t.pnl > 0 ? 'W' : t.pnl < 0 ? 'L' : 'B');
+const ocCls = t => ({ W: 'pos', L: 'neg', B: 'be' })[outcome(t)];
 function tradeStats(list) {
-  const wins = list.filter(t => t.pnl > 0).map(t => +t.pnl), losses = list.filter(t => t.pnl < 0).map(t => +t.pnl);
-  const gw = sum(wins), gl = -sum(losses), net = sum(list.map(t => +t.pnl || 0));
-  return { n: list.length, net, winRate: list.length ? wins.length / list.length : null, pf: gl > 0 ? gw / gl : (gw > 0 ? Infinity : null),
-    avgW: wins.length ? gw / wins.length : null, avgL: losses.length ? -gl / losses.length : null, exp: list.length ? net / list.length : null };
+  // Win rate and averages count only real wins and losses; profit factor and net use every dollar, break-even trades included.
+  const wins = list.filter(t => outcome(t) === 'W').map(t => +t.pnl), losses = list.filter(t => outcome(t) === 'L').map(t => +t.pnl), be = list.length - wins.length - losses.length;
+  const pos = sum(list.filter(t => t.pnl > 0).map(t => +t.pnl)), neg = -sum(list.filter(t => t.pnl < 0).map(t => +t.pnl)), net = sum(list.map(t => +t.pnl || 0)), decided = wins.length + losses.length;
+  return { n: list.length, nW: wins.length, nL: losses.length, nB: be, net, winRate: decided ? wins.length / decided : null, pf: neg > 0 ? pos / neg : (pos > 0 ? Infinity : null),
+    avgW: wins.length ? sum(wins) / wins.length : null, avgL: losses.length ? sum(losses) / losses.length : null, exp: list.length ? net / list.length : null };
 }
 const habitDone = (d, hid, date = ymd()) => (d.checks[date] || []).includes(hid);
 function habitStreak(d, hid) { let n = 0, x = new Date(); if (!habitDone(d, hid, ymd(x))) x = addDays(x, -1); while (habitDone(d, hid, ymd(x)) && n < 999) { n++; x = addDays(x, -1); } return n; }
@@ -944,7 +971,7 @@ function planetStat(p) {
   const d = pd(p.id); if (!d) return '';
   switch (p.type) {
     case 'uni': { const ex = upcomingExams(d)[0]; if (ex) { const n = daysUntil(ex.date); return `${courseName(d, ex.courseId)} · ${n === 0 ? 'oggi' : n === 1 ? 'domani' : 'tra ' + n + ' g'}`; } return `${fmtMin(studyMin(d, null))} in 7 g`; }
-    case 'trading': { const m = monthTrades(d); return m.length ? `${eur(tradeStats(m).net, true)} nel mese` : 'nessun trade nel mese'; }
+    case 'trading': { markOutcomes(d); const m = monthTrades(d); return m.length ? `${usd(tradeStats(m).net, true)} nel mese` : 'nessun trade nel mese'; }
     case 'pac': { if (!d.contribs.length) return d.settings.monthly ? `${eur(d.settings.monthly)} al mese` : 'imposta il piano'; const s = pacStats(d); return `${eur(s.value)} · ${fmtPctS(s.gainPct)}`; }
     case 'goals': return `abitudini ${d.habits.filter(h => habitDone(d, h.id)).length}/${d.habits.length}`;
     default: { if (d.metric.name) return `${fmtNum(entrySum(d, 7))} ${d.metric.unit || ''} in 7 g`.replace(/\s+/g, ' ').trim(); const o = openTasks(d).length; return `${o} ${o === 1 ? 'attività' : 'attività'} aperte`; }
@@ -1030,7 +1057,7 @@ function tm(t) { // derived numbers for one trade, cached per trade object
 function rangeFrom(r) { if (r === 'ytd') return `${new Date().getFullYear()}-01-01`; if (!r) return ''; return ymd(addDays(new Date(), -(Number(r) - 1))); }
 function filterTrades(d, f) {
   const from = rangeFrom(f.range), q = String(f.q || '').trim().toLowerCase();
-  return sortedTrades(d).filter(t => (!from || t.date >= from) && (!f.dir || t.dir === f.dir) && (!f.setup || t.setup === f.setup) && (!f.symbol || t.symbol === f.symbol)
+  return sortedTrades(d).filter(t => (!from || t.date >= from) && (!f.dir || t.dir === f.dir) && (!f.res || outcome(t) === f.res) && (!f.setup || t.setup === f.setup) && (!f.symbol || t.symbol === f.symbol)
     && (!f.tag || t.tags.includes(f.tag)) && (!q || `${t.note} ${t.symbol} ${t.setup} ${t.tags.join(' ')} ${t.emotion}`.toLowerCase().includes(q)));
 }
 const rangeLabel = r => r === 'ytd' ? 'da inizio anno' : r ? `ultimi ${r} giorni` : 'dall\'inizio';
@@ -1040,11 +1067,11 @@ function fullStats(list, d) {
   const rs = [], durW = [], durL = [], byDay = new Map();
   for (const t of list) {
     eq += t.pnl; peak = Math.max(peak, eq); maxDD = Math.min(maxDD, eq - peak);
-    if (t.pnl > 0) { cw++; cl = 0; } else if (t.pnl < 0) { cl++; cw = 0; } else { cw = 0; cl = 0; }
+    const o = outcome(t); if (o === 'W') { cw++; cl = 0; } else if (o === 'L') { cl++; cw = 0; } // break-even trades do not break a streak
     mcw = Math.max(mcw, cw); mcl = Math.max(mcl, cl);
     if (!best || t.pnl > best.pnl) best = t; if (!worst || t.pnl < worst.pnl) worst = t;
     const m = tm(t), f = num(t.fees) || 0; fees += f; gross += m.gross != null ? m.gross : t.pnl + f;
-    if (m.r != null) rs.push(m.r); if (m.dur != null) (t.pnl > 0 ? durW : durL).push(m.dur);
+    if (m.r != null) rs.push(m.r); if (m.dur != null && o !== 'B') (o === 'W' ? durW : durL).push(m.dur);
     byDay.set(t.date, (byDay.get(t.date) || 0) + t.pnl);
   }
   const days = [...byDay.values()], avg = a => a.length ? sum(a) / a.length : null;
@@ -1059,16 +1086,16 @@ function groupStats(list, keyFn) {
   for (const t of list) for (const k of [].concat(keyFn(t)).filter(Boolean)) { if (!g.has(k)) g.set(k, []); g.get(k).push(t); }
   return [...g.entries()].map(([key, ts]) => { const s = tradeStats(ts), rs = ts.map(t => tm(t).r).filter(r => r != null); return { key, n: s.n, net: s.net, wr: s.winRate, pf: s.pf, avgR: rs.length ? sum(rs) / rs.length : null }; }).sort((a, b) => b.net - a.net);
 }
-function currentStreak(all) { let n = 0, type = null; for (let i = all.length - 1; i >= 0; i--) { const w = all[i].pnl > 0 ? 'W' : all[i].pnl < 0 ? 'L' : null; if (!w) break; if (!type) type = w; if (w !== type) break; n++; } return { type, n }; }
+function currentStreak(all) { let n = 0, type = null; for (let i = all.length - 1; i >= 0; i--) { const o = outcome(all[i]); if (o === 'B') continue; const w = o; if (!type) type = w; if (w !== type) break; n++; } return { type, n }; }
 function alertsFor(d) {
   const today = ymd(), tt = sortedTrades(d).filter(t => t.date === today), out = [];
   const lim = num(d.settings.dailyLossLimit), maxT = num(d.settings.maxTrades), pnl = sum(tt.map(t => t.pnl));
-  if (lim && pnl <= -Math.abs(lim)) out.push(['bad', 'Limite di perdita raggiunto', `Oggi sei a ${eur(pnl, true)} su un limite di ${eur(-Math.abs(lim))}. Per oggi si chiude.`]);
+  if (lim && pnl <= -Math.abs(lim)) out.push(['bad', 'Limite di perdita raggiunto', `Oggi sei a ${usd(pnl, true)} su un limite di ${usd(-Math.abs(lim))}. Per oggi si chiude.`]);
   if (maxT && tt.length > maxT) out.push(['bad', 'Troppi trade', `${tt.length} trade oggi, il tuo massimo è ${maxT}.`]);
   else if (maxT && tt.length === maxT) out.push(['warn', 'Massimo di trade raggiunto', 'Da qui in poi solo osservazione.']);
-  let run = 0; for (let i = tt.length - 1; i >= 0 && tt[i].pnl < 0; i--) run++;
+  let run = 0; for (let i = tt.length - 1; i >= 0; i--) { const o = outcome(tt[i]); if (o === 'B') continue; if (o !== 'L') break; run++; }
   if (run >= 3) out.push(['warn', `${run} perdite di fila`, 'Fai una pausa di almeno 20 minuti prima del prossimo trade.']);
-  for (let i = 1; i < tt.length; i++) { const a = tt[i - 1], b = tt[i], gap = minutesBetween(a.timeOut || a.timeIn, b.timeIn); if (a.pnl < 0 && gap != null && gap <= 10) { out.push(['warn', 'Possibile revenge trade', `${b.symbol} aperto ${gap} min dopo una perdita su ${a.symbol}.`]); break; } }
+  for (let i = 1; i < tt.length; i++) { const a = tt[i - 1], b = tt[i], gap = minutesBetween(a.timeOut || a.timeIn, b.timeIn); if (outcome(a) === 'L' && gap != null && gap <= 10) { out.push(['warn', 'Possibile revenge trade', `${b.symbol} aperto ${gap} min dopo una perdita su ${a.symbol}.`]); break; } }
   const off = tt.filter(t => t.plan === 'no').length; if (off) out.push(['warn', 'Trade fuori piano', `${off} ${off === 1 ? 'trade oggi non rispettava' : 'trade oggi non rispettavano'} il piano.`]);
   return out;
 }
@@ -1332,9 +1359,10 @@ function rangeSeg() { return `<div class="seg" role="group" aria-label="Periodo"
 function filtersBar(p, d) {
   const sel = (k, label, values) => `<select data-tf="${k}" data-p="${p.id}" aria-label="${label}"><option value="">${label}</option>${values.map(v => `<option value="${esc(v)}" ${ui.tf[k] === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>`;
   const setups = uniq(d.trades.map(t => t.setup).filter(Boolean)).sort(), syms = uniq(d.trades.map(t => t.symbol).filter(Boolean)).sort(), tags = uniq(d.tags.concat(d.trades.flatMap(t => t.tags)));
-  const active = ui.tf.dir || ui.tf.setup || ui.tf.symbol || ui.tf.tag || ui.tf.q;
+  const active = ui.tf.dir || ui.tf.res || ui.tf.setup || ui.tf.symbol || ui.tf.tag || ui.tf.q;
   return `<div class="filters">${rangeSeg()}
     <select data-tf="dir" data-p="${p.id}" aria-label="Direzione"><option value="">Direzione</option><option value="long" ${ui.tf.dir === 'long' ? 'selected' : ''}>Long</option><option value="short" ${ui.tf.dir === 'short' ? 'selected' : ''}>Short</option></select>
+    <select data-tf="res" data-p="${p.id}" aria-label="Esito"><option value="">Esito</option>${[['W', 'Vincenti'], ['L', 'Perdenti'], ['B', 'Break-even']].map(([k, l]) => `<option value="${k}" ${ui.tf.res === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     ${sel('setup', 'Setup', setups)}${sel('symbol', 'Strumento', syms)}${sel('tag', 'Tag', tags)}
     <input id="tfq-${p.id}" data-tf="q" data-p="${p.id}" placeholder="Cerca nelle note" value="${esc(ui.tf.q)}" autocomplete="off" aria-label="Cerca">
     ${active ? `<button class="btn sm ghost" data-act="tf-reset">Azzera filtri</button>` : ''}</div>`;
@@ -1342,12 +1370,12 @@ function filtersBar(p, d) {
 function tradeRow(p, t, compact) {
   const m = tm(t);
   const tags = t.tags.length ? `<div class="tags">${t.tags.slice(0, 3).map(x => `<span class="tagc">${esc(x)}</span>`).join('')}${t.tags.length > 3 ? `<span class="tagc">+${t.tags.length - 3}</span>` : ''}</div>` : '—';
-  if (compact) return `<div class="row trow" data-act="trade-edit" data-p="${p.id}" data-id="${t.id}" role="button" tabindex="0"><span class="dir ${t.dir}" style="width:44px">${t.dir}</span><div class="t"><strong>${esc(t.symbol)}</strong>${t.setup ? ` · ${esc(t.setup)}` : ''}<small>${esc(fmtDate(t.date, { weekday: 'short', day: 'numeric', month: 'short' }))}${t.timeIn ? ' · ' + esc(t.timeIn) : ''}${m.r != null ? ' · ' + fmtR(m.r) : ''}</small></div><strong class="${pnlCls(t.pnl)}" style="font-family:var(--f-mono)">${eur(t.pnl, true)}</strong></div>`;
+  if (compact) return `<div class="row trow" data-act="trade-edit" data-p="${p.id}" data-id="${t.id}" role="button" tabindex="0"><span class="dir ${t.dir}" style="width:44px">${t.dir}</span><div class="t"><strong>${esc(t.symbol)}</strong>${t.setup ? ` · ${esc(t.setup)}` : ''}<small>${esc(fmtDate(t.date, { weekday: 'short', day: 'numeric', month: 'short' }))}${t.timeIn ? ' · ' + esc(t.timeIn) : ''}${m.r != null ? ' · ' + fmtR(m.r) : ''}</small></div><strong class="${ocCls(t)}" style="font-family:var(--f-mono)">${usd(t.pnl, true)}</strong>${outcome(t) === 'B' ? ' <span class="bechip">BE</span>' : ''}</div>`;
   return `<tr class="trow" data-act="trade-edit" data-p="${p.id}" data-id="${t.id}" role="button" tabindex="0">
     <td class="n" style="text-align:left">${esc(fmtDate(t.date, { day: '2-digit', month: '2-digit' }))}</td><td class="n" style="text-align:left">${esc(t.timeIn || '—')}${t.timeOut ? '<br><span class="muted">' + esc(t.timeOut) + '</span>' : ''}</td>
     <td><strong>${esc(t.symbol)}</strong>${t.market ? `<br><span class="muted">${esc(t.market)}</span>` : ''}</td><td><span class="dir ${t.dir}">${t.dir}</span></td>
     <td class="n">${t.qty ?? '—'}</td><td class="n">${t.entry ?? '—'}</td><td class="n">${t.exit ?? '—'}</td><td class="n">${t.stop ?? '—'}</td>
-    <td class="n ${pnlCls(t.pnl)}"><strong>${eur(t.pnl, true)}</strong></td><td class="n ${m.r > 0 ? 'rpos' : m.r < 0 ? 'rneg' : ''}">${fmtR(m.r)}</td>
+    <td class="n ${ocCls(t)}"><strong>${usd(t.pnl, true)}</strong>${outcome(t) === 'B' ? '<br><span class="bechip">BE</span>' : ''}</td><td class="n ${m.r > 0 ? 'rpos' : m.r < 0 ? 'rneg' : ''}">${fmtR(m.r)}</td>
     <td>${t.setup ? `<span class="chip">${esc(t.setup)}</span>` : '—'}</td><td>${tags}</td><td class="n">${t.grade ? esc(t.grade) + '/5' : '—'}</td>
     <td>${t.link ? `<a href="${esc(t.link)}" target="_blank" rel="noopener" data-act="noop" title="Apri il grafico">${I.out}</a>` : ''}</td></tr>`;
 }
@@ -1360,8 +1388,8 @@ function calendarCard(p, d) {
   const cells = ['L', 'M', 'M', 'G', 'V', 'S', 'D'].map(x => `<div class="dow">${x}</div>`).join('') + Array.from({ length: lead }, () => '<div class="d out"></div>').join('') +
     vals.map(([v, n], i) => { const ds = dsOf(i), has = n > 0, journ = !!(d.days[ds] && Object.values(d.days[ds]).some(Boolean)); const pc = has ? Math.round(18 + 52 * Math.abs(v) / maxAbs) : 0;
       const bg = has ? `background:color-mix(in srgb, ${v >= 0 ? 'var(--good)' : 'var(--bad)'} ${pc}%, #0E1528)` : '';
-      return `<button type="button" class="d ${ds === ymd() ? 'today' : ''} ${has ? 'has' : ''}" style="${bg}" data-act="jday" data-p="${p.id}" data-v="${ds}" title="${esc(fmtDate(ds, { day: 'numeric', month: 'long' }))}${has ? ' · ' + esc(eur(v, true)) + ' · ' + n + ' trade' : ''}"><span>${i + 1}${journ ? ' ·' : ''}</span>${has ? `<b>${compact(v)}</b>` : ''}</button>`; }).join('');
-  return `<div class="card"><div class="card-h"><div><h2>Calendario</h2><div class="label">${esc(first.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }))} · <span class="${pnlCls(monthNet)}">${eur(monthNet, true)}</span></div></div>
+      return `<button type="button" class="d ${ds === ymd() ? 'today' : ''} ${has ? 'has' : ''}" style="${bg}" data-act="jday" data-p="${p.id}" data-v="${ds}" title="${esc(fmtDate(ds, { day: 'numeric', month: 'long' }))}${has ? ' · ' + esc(usd(v, true)) + ' · ' + n + ' trade' : ''}"><span>${i + 1}${journ ? ' ·' : ''}</span>${has ? `<b>${compact(v)}</b>` : ''}</button>`; }).join('');
+  return `<div class="card"><div class="card-h"><div><h2>Calendario</h2><div class="label">${esc(first.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }))} · <span class="${pnlCls(monthNet)}">${usd(monthNet, true)}</span></div></div>
     <div style="display:flex;gap:2px"><button class="iconbtn" data-act="cal" data-v="-1" aria-label="Mese precedente">${I.chevL}</button><button class="iconbtn" data-act="cal" data-v="1" aria-label="Mese successivo">${I.chevR}</button></div></div>
     <div class="cal">${cells}</div><p class="muted" style="margin-top:10px">Tocca un giorno per aprire il giornale di quella sessione.</p></div>`;
 }
@@ -1371,19 +1399,19 @@ function trOverview(p, d) {
   const lim = num(d.settings.dailyLossLimit), maxT = num(d.settings.maxTrades), start = num(d.settings.startBalance), total = sum(all.map(t => t.pnl));
   const st = currentStreak(all), alerts = alertsFor(d);
   const acct = `<section class="kpis">
-    ${start != null ? kpi('Capitale', eur(start + total), '', `partenza ${eur(start)} · ${start ? (total / start * 100).toFixed(1).replace('.', ',') + '%' : ''}`) : kpi('Capitale', '—', '', '<button class="btn sm ghost" data-act="tr-tab" data-v="setup" style="height:24px;padding:0 6px">Imposta</button>')}
-    ${kpi('Oggi', tt.length ? eur(pnlT, true) : '—', pnlCls(pnlT), lim ? `limite ${eur(-Math.abs(lim))}` : 'nessun limite impostato')}
+    ${start != null ? kpi('Capitale', usd(start + total), '', `partenza ${usd(start)} · ${start ? (total / start * 100).toFixed(1).replace('.', ',') + '%' : ''}`) : kpi('Capitale', '—', '', '<button class="btn sm ghost" data-act="tr-tab" data-v="setup" style="height:24px;padding:0 6px">Imposta</button>')}
+    ${kpi('Oggi', tt.length ? usd(pnlT, true) : '—', pnlCls(pnlT), lim ? `limite ${usd(-Math.abs(lim))}` : 'nessun limite impostato')}
     ${kpi('Trade oggi', `${tt.length}${maxT ? `<small> / ${maxT}</small>` : ''}`, maxT && tt.length > maxT ? 'neg' : '')}
     ${kpi('Serie attuale', st.n ? `${st.n} ${st.type === 'W' ? 'vinti' : 'persi'}` : '—', st.type === 'W' ? 'pos' : st.type === 'L' ? 'neg' : '')}
   </section>`;
   const alertHtml = `<section class="card"><div class="card-h"><div><h2>Disciplina di oggi</h2><div class="label">Controlli automatici sulle tue regole</div></div></div>
     <div class="alerts">${alerts.length ? alerts.map(([c, t, x]) => `<div class="alert ${c}"><i class="ic"></i><div><b>${esc(t)}</b>${esc(x)}</div></div>`).join('') : `<div class="alert ok"><i class="ic"></i><div><b>Tutto in regola</b>${tt.length ? 'Nessuna violazione nelle operazioni di oggi.' : 'Nessun trade ancora oggi. Compila il piano nel Giornale prima di iniziare.'}</div></div>`}</div></section>`;
   const kp = `<section class="kpis">
-    ${kpi('Netto · ' + s.n + ' trade', list.length ? eur(s.net, true) : '—', pnlCls(s.net), rangeLabel(ui.tf.range))}
-    ${kpi('Win rate', fmtPct(s.winRate))}${kpi('Profit factor', fmtPF(s.pf))}
-    ${kpi('Expectancy', s.exp != null ? eur(s.exp, true) : '—', pnlCls(s.exp), 'per trade')}
+    ${kpi('Netto · ' + s.n + ' trade', list.length ? usd(s.net, true) : '—', pnlCls(s.net), rangeLabel(ui.tf.range))}
+    ${kpi('Win rate', fmtPct(s.winRate), '', `${s.nW} V · ${s.nL} P · ${s.nB} BE`)}${kpi('Profit factor', fmtPF(s.pf))}
+    ${kpi('Expectancy', s.exp != null ? usd(s.exp, true) : '—', pnlCls(s.exp), 'per trade')}
     ${kpi('R medio', fmtR(s.avgR), pnlCls(s.avgR), s.nR ? `su ${s.nR} trade con stop` : 'serve lo stop')}
-    ${kpi('Max drawdown', list.length ? eur(s.maxDD) : '—', s.maxDD < 0 ? 'neg' : '', s.ddPct != null ? s.ddPct.toFixed(1).replace('.', ',') + '% del capitale' : '')}
+    ${kpi('Max drawdown', list.length ? usd(s.maxDD) : '—', s.maxDD < 0 ? 'neg' : '', s.ddPct != null ? s.ddPct.toFixed(1).replace('.', ',') + '% del capitale' : '')}
   </section>`;
   const recent = all.slice(-6).reverse();
   return `<div class="view">${trTabsBar()}
@@ -1398,7 +1426,7 @@ function trTrades(p, d) {
   const list = filterTrades(d, ui.tf), s = tradeStats(list), rev = [...list].reverse(), shown = ui.allTrades ? rev : rev.slice(0, 50);
   return `<div class="view">${trTabsBar()}
     <div class="vh">${filtersBar(p, d)}<button class="btn sm primary" data-act="sheet" data-kind="trade" data-p="${p.id}">${I.plus}Trade</button></div>
-    <section class="card"><div class="card-h"><div><h2>Trade</h2><div class="label">${s.n} trade · <span class="${pnlCls(s.net)}">${eur(s.net, true)}</span> · win rate ${fmtPct(s.winRate)}</div></div></div>
+    <section class="card"><div class="card-h"><div><h2>Trade</h2><div class="label">${s.n} trade · <span class="${pnlCls(s.net)}">${usd(s.net, true)}</span> · win rate ${fmtPct(s.winRate)}</div></div></div>
       ${list.length ? `<div class="tablewrap"><table><thead><tr><th>Data</th><th>Orari</th><th>Strumento</th><th>Dir.</th><th class="n">Qtà</th><th class="n">Entrata</th><th class="n">Uscita</th><th class="n">Stop</th><th class="n">P&L</th><th class="n">R</th><th>Setup</th><th>Tag</th><th class="n">Voto</th><th></th></tr></thead><tbody>${shown.map(t => tradeRow(p, t)).join('')}</tbody></table></div>
         ${rev.length > shown.length ? `<div style="margin-top:12px"><button class="btn sm ghost" data-act="all-trades">Mostra tutti i ${rev.length} trade</button></div>` : ''}`
         : empty('Nessun trade con questi filtri', 'Cambia periodo o azzera i filtri.', '')}</section>
@@ -1413,7 +1441,7 @@ function trJournal(p, d) {
   return `<div class="view">${trTabsBar()}
     <div class="vh"><div class="dnav"><button class="iconbtn" data-act="jnav" data-v="-1" aria-label="Giorno precedente">${I.chevL}</button><span class="when">${esc(fmtDate(date, { weekday: 'long', day: 'numeric', month: 'long' }))}</span><button class="iconbtn" data-act="jnav" data-v="1" aria-label="Giorno successivo">${I.chevR}</button>${date !== ymd() ? `<button class="btn sm ghost" data-act="jnav" data-v="0">Oggi</button>` : ''}</div>
       <button class="btn sm primary" data-act="sheet" data-kind="trade" data-p="${p.id}" data-date="${date}">${I.plus}Trade</button></div>
-    <section class="kpis">${kpi('P&L sessione', tt.length ? eur(s.net, true) : '—', pnlCls(s.net))}${kpi('Trade', String(tt.length))}${kpi('Win rate', fmtPct(s.winRate))}${kpi('Fuori piano', String(tt.filter(t => t.plan === 'no').length), tt.some(t => t.plan === 'no') ? 'neg' : '')}</section>
+    <section class="kpis">${kpi('P&L sessione', tt.length ? usd(s.net, true) : '—', pnlCls(s.net))}${kpi('Trade', String(tt.length))}${kpi('Win rate', fmtPct(s.winRate))}${kpi('Fuori piano', String(tt.filter(t => t.plan === 'no').length), tt.some(t => t.plan === 'no') ? 'neg' : '')}</section>
     <section class="jgrid">
       <div class="card"><div class="card-h"><div><h2>Prima della sessione</h2><div class="label">Piano · si salva mentre scrivi</div></div></div>
         <div class="rates" style="margin-top:0"><span class="label">Bias</span>${seg('bias', [['long', 'Long'], ['short', 'Short'], ['neutro', 'Neutro']])}</div>
@@ -1430,13 +1458,13 @@ function trJournal(p, d) {
     </section>
     <section class="card"><div class="card-h"><div><h2>Trade della sessione</h2><div class="label">${tt.length} trade</div></div></div>
       ${tt.length ? `<div class="rows">${tt.map(t => tradeRow(p, t, true)).join('')}</div>` : '<p class="muted">Nessun trade registrato in questa data.</p>'}</section>
-    ${recentDays.length ? `<section class="card"><div class="card-h"><div><h2>Sessioni recenti</h2><div class="label">Tocca per aprire</div></div></div><div class="rows">${recentDays.map(ds => { const n = dayPnl(d, ds), has = d.trades.some(t => t.date === ds), j = d.days[ds] || {}; return `<div class="row trow" data-act="jday" data-p="${p.id}" data-v="${ds}" role="button" tabindex="0"><div class="t">${esc(fmtDate(ds, { weekday: 'long', day: 'numeric', month: 'long' }))}<small>${esc([j.bias ? 'bias ' + j.bias : '', j.lesson ? '“' + j.lesson.slice(0, 70) + '”' : '', j.rulesOk === 'no' ? 'regole non rispettate' : ''].filter(Boolean).join(' · ') || (has ? 'giornale da compilare' : ''))}</small></div>${has ? `<strong class="${pnlCls(n)}" style="font-family:var(--f-mono)">${eur(n, true)}</strong>` : ''}</div>`; }).join('')}</div></section>` : ''}
+    ${recentDays.length ? `<section class="card"><div class="card-h"><div><h2>Sessioni recenti</h2><div class="label">Tocca per aprire</div></div></div><div class="rows">${recentDays.map(ds => { const n = dayPnl(d, ds), has = d.trades.some(t => t.date === ds), j = d.days[ds] || {}; return `<div class="row trow" data-act="jday" data-p="${p.id}" data-v="${ds}" role="button" tabindex="0"><div class="t">${esc(fmtDate(ds, { weekday: 'long', day: 'numeric', month: 'long' }))}<small>${esc([j.bias ? 'bias ' + j.bias : '', j.lesson ? '“' + j.lesson.slice(0, 70) + '”' : '', j.rulesOk === 'no' ? 'regole non rispettate' : ''].filter(Boolean).join(' · ') || (has ? 'giornale da compilare' : ''))}</small></div>${has ? `<strong class="${pnlCls(n)}" style="font-family:var(--f-mono)">${usd(n, true)}</strong>` : ''}</div>`; }).join('')}</div></section>` : ''}
   </div>`;
 }
 function groupCard(title, sub, rows) {
   if (!rows.length) return '';
   return `<div class="card"><div class="card-h"><div><h2>${title}</h2><div class="label">${sub}</div></div></div><div class="tablewrap"><table class="gtable"><thead><tr><th></th><th class="n">Trade</th><th class="n">Win %</th><th class="n">Netto</th><th class="n">PF</th><th class="n">R medio</th></tr></thead><tbody>
-    ${rows.map(r => `<tr><td><strong>${esc(r.key)}</strong></td><td class="n">${r.n}</td><td class="n">${fmtPct(r.wr)}</td><td class="n ${pnlCls(r.net)}">${eur(r.net, true)}</td><td class="n">${fmtPF(r.pf)}</td><td class="n">${fmtR(r.avgR)}</td></tr>`).join('')}</tbody></table></div></div>`;
+    ${rows.map(r => `<tr><td><strong>${esc(r.key)}</strong></td><td class="n">${r.n}</td><td class="n">${fmtPct(r.wr)}</td><td class="n ${pnlCls(r.net)}">${usd(r.net, true)}</td><td class="n">${fmtPF(r.pf)}</td><td class="n">${fmtR(r.avgR)}</td></tr>`).join('')}</tbody></table></div></div>`;
 }
 function trStats(p, d) {
   const list = filterTrades(d, ui.tf), s = fullStats(list, d);
@@ -1445,21 +1473,21 @@ function trStats(p, d) {
   return `<div class="view">${trTabsBar()}
     <div class="vh">${filtersBar(p, d)}</div>
     <section class="kpis">
-      ${kpi('Netto', eur(s.net, true), pnlCls(s.net), `lordo ${eur(s.gross, true)} · commissioni ${eur(s.fees)}`)}
+      ${kpi('Netto', usd(s.net, true), pnlCls(s.net), `lordo ${usd(s.gross, true)} · commissioni ${usd(s.fees)}`)}
       ${kpi('Trade', String(s.n), '', `${s.long.n} long · ${s.short.n} short`)}
-      ${kpi('Win rate', fmtPct(s.winRate), '', `long ${fmtPct(s.long.winRate)} · short ${fmtPct(s.short.winRate)}`)}
+      ${kpi('Win rate', fmtPct(s.winRate), '', `${s.nW} V · ${s.nL} P · ${s.nB} BE · long ${fmtPct(s.long.winRate)} · short ${fmtPct(s.short.winRate)}`)}
       ${kpi('Profit factor', fmtPF(s.pf))}
       ${kpi('Payoff', s.payoff != null ? s.payoff.toFixed(2).replace('.', ',') : '—', '', 'vincita media / perdita media')}
-      ${kpi('Expectancy', s.exp != null ? eur(s.exp, true) : '—', pnlCls(s.exp), 'per trade')}
-      ${kpi('Media vincita', s.avgW != null ? eur(s.avgW) : '—', 'pos')}${kpi('Media perdita', s.avgL != null ? eur(s.avgL) : '—', 'neg')}
+      ${kpi('Expectancy', s.exp != null ? usd(s.exp, true) : '—', pnlCls(s.exp), 'per trade')}
+      ${kpi('Media vincita', s.avgW != null ? usd(s.avgW) : '—', 'pos')}${kpi('Media perdita', s.avgL != null ? usd(s.avgL) : '—', 'neg')}
       ${kpi('R medio', fmtR(s.avgR), pnlCls(s.avgR), s.totR != null ? `totale ${fmtR(s.totR)}` : 'serve lo stop')}
-      ${kpi('Miglior trade', s.best ? eur(s.best.pnl, true) : '—', 'pos', s.best ? `${esc(s.best.symbol)} · ${esc(fmtDate(s.best.date))}` : '')}
-      ${kpi('Peggior trade', s.worst ? eur(s.worst.pnl, true) : '—', 'neg', s.worst ? `${esc(s.worst.symbol)} · ${esc(fmtDate(s.worst.date))}` : '')}
-      ${kpi('Max drawdown', eur(s.maxDD), s.maxDD < 0 ? 'neg' : '', s.ddPct != null ? s.ddPct.toFixed(1).replace('.', ',') + '% del capitale' : '')}
+      ${kpi('Miglior trade', s.best ? usd(s.best.pnl, true) : '—', 'pos', s.best ? `${esc(s.best.symbol)} · ${esc(fmtDate(s.best.date))}` : '')}
+      ${kpi('Peggior trade', s.worst ? usd(s.worst.pnl, true) : '—', 'neg', s.worst ? `${esc(s.worst.symbol)} · ${esc(fmtDate(s.worst.date))}` : '')}
+      ${kpi('Max drawdown', usd(s.maxDD), s.maxDD < 0 ? 'neg' : '', s.ddPct != null ? s.ddPct.toFixed(1).replace('.', ',') + '% del capitale' : '')}
       ${kpi('Serie massime', `${s.mcw}<small> V</small> · ${s.mcl}<small> P</small>`)}
       ${kpi('Durata media', fmtDur(s.durW), '', `vincenti · perdenti ${fmtDur(s.durL)}`)}
-      ${kpi('Giorni', `${s.green}<small> verdi</small> · ${s.red}<small> rossi</small>`, '', `media ${s.avgDay != null ? eur(s.avgDay, true) : '—'} al giorno`)}
-      ${kpi('Giorno migliore', s.bestDay != null ? eur(s.bestDay, true) : '—', pnlCls(s.bestDay), `peggiore ${s.worstDay != null ? eur(s.worstDay, true) : '—'}`)}
+      ${kpi('Giorni', `${s.green}<small> verdi</small> · ${s.red}<small> rossi</small>`, '', `media ${s.avgDay != null ? usd(s.avgDay, true) : '—'} al giorno`)}
+      ${kpi('Giorno migliore', s.bestDay != null ? usd(s.bestDay, true) : '—', pnlCls(s.bestDay), `peggiore ${s.worstDay != null ? usd(s.worstDay, true) : '—'}`)}
     </section>
     <section class="grid2">
       <div class="card"><div class="card-h"><div><h2>Equity</h2><div class="label">P&L cumulato</div></div></div><div class="chart" data-chart="equity" data-scope="stats" data-p="${p.id}"></div><div class="chart" data-chart="dd" data-scope="stats" data-p="${p.id}" style="margin-top:6px"></div></div>
@@ -1485,9 +1513,16 @@ function trSetup(p, d) {
   return `<div class="view">${trTabsBar()}
     <section class="grid2">
       <div class="card"><div class="card-h"><div><h2>Conto e rischio</h2><div class="label">Usati per capitale, drawdown e controlli</div></div></div>
-        ${inp('startBalance', 'Capitale iniziale', 'es. 5000', '€')}${inp('riskPct', 'Rischio per trade', 'es. 1', '%')}
-        ${start && rp ? `<p class="muted" style="margin-top:8px">Rischio massimo per trade: <strong style="color:var(--ink)">${eur(start * rp / 100)}</strong></p>` : ''}
-        ${inp('dailyLossLimit', 'Perdita massima giornaliera', 'es. 150', '€')}${inp('maxTrades', 'Trade massimi al giorno', 'es. 3', 'trade')}
+        ${inp('startBalance', 'Capitale iniziale', 'es. 5000', tsym())}${inp('riskPct', 'Rischio per trade', 'es. 1', '%')}
+        ${start && rp ? `<p class="muted" style="margin-top:8px">Rischio massimo per trade: <strong style="color:var(--ink)">${usd(start * rp / 100)}</strong></p>` : ''}
+        ${inp('dailyLossLimit', 'Perdita massima giornaliera', 'es. 150', tsym())}${inp('maxTrades', 'Trade massimi al giorno', 'es. 3', 'trade')}
+        <label class="jfield"><span>Valuta del conto</span><div class="pvrow"><select id="set-cur-${p.id}" data-setcur="1" data-p="${p.id}">${[['USD', 'Dollaro ($)'], ['EUR', 'Euro (€)'], ['GBP', 'Sterlina (£)'], ['CHF', 'Franco svizzero (CHF)']].map(([k, l]) => `<option value="${k}" ${(st.currency || 'USD') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div></label>
+      </div>
+      <div class="card"><div class="card-h"><div><h2>Break-even</h2><div class="label">Quando un trade non conta né come vincita né come perdita</div></div></div>
+        ${inp('bePct', 'Soglia minima', 'es. 0,1', '% del conto')}
+        ${num(st.bePct) ? (start ? `<p class="muted" style="margin-top:8px">Con il conto attuale (${usd(start + sum(d.trades.map(t => +t.pnl || 0)))}) un trade è break-even se guadagna o perde meno di <strong style="color:var(--ink)">${usd((start + sum(d.trades.map(t => +t.pnl || 0))) * num(st.bePct) / 100)}</strong>. La soglia segue il conto: si calcola sul saldo al momento di ogni trade.</p>`
+          : `<p class="muted" style="margin-top:8px;color:var(--warn)">Imposta il capitale iniziale qui a fianco: la soglia è una percentuale del conto.</p>`)
+          : '<p class="muted" style="margin-top:8px">Scrivi la percentuale del conto sotto la quale un risultato è break-even (es. 0,1%). I break-even non contano nel win rate e non interrompono le serie. Puoi anche segnare un singolo trade come break-even dal suo modulo.</p>'}
       </div>
       <div class="card"><div class="card-h"><div><h2>Valore del punto</h2><div class="label">Per il calcolo automatico del P&L</div></div></div>
         ${pvs.length ? `<div class="rows">${pvs.map(([k, v]) => `<div class="row"><div class="t"><strong>${esc(k)}</strong><small>1 punto per 1 contratto</small></div><span style="font-family:var(--f-mono)">${esc(String(v).replace('.', ','))}</span><button class="iconbtn" data-act="pv-del" data-p="${p.id}" data-v="${esc(k)}" aria-label="Rimuovi ${esc(k)}">${I.x}</button></div>`).join('')}</div>` : '<p class="muted">Esempi: NQ 20, MNQ 2, ES 50, FDAX 25. Per azioni e crypto lascia 1.</p>'}
@@ -1506,6 +1541,7 @@ function trSetup(p, d) {
 }
 const trTabsBar = () => `<nav class="tabs" role="tablist" aria-label="Sezioni del journal">${TABS.map(([k, l]) => `<button type="button" role="tab" data-act="tr-tab" data-v="${k}" aria-selected="${ui.trTab === k}">${l}</button>`).join('')}</nav>`;
 function viewTrading(p, d) {
+  markOutcomes(d);
   switch (ui.trTab) { case 'trades': return trTrades(p, d); case 'journal': return trJournal(p, d); case 'stats': return trStats(p, d); case 'setup': return trSetup(p, d); default: return trOverview(p, d); }
 }
 
@@ -1612,6 +1648,15 @@ const VIEWS = { uni: viewUni, trading: viewTrading, pac: viewPac, goals: viewGoa
 // A tap updates the touched control immediately; everything derived from it is rebuilt
 // right after the next paint, coalesced, so the browser never delays the visible response.
 let qPanel = false, qChrome = false, introNext = false;
+const VCACHE = new Map(); VCACHE.rev = -1;
+function stashBody(body) { // keep the current view for later if it is still up to date
+  const k = body.dataset.vkey;
+  if (k && body.firstChild && VCACHE.rev === +k.split('§')[0]) {
+    const frag = document.createDocumentFragment(); while (body.firstChild) frag.appendChild(body.firstChild);
+    VCACHE.set(k, frag); if (VCACHE.size > 10) VCACHE.delete(VCACHE.keys().next().value);
+  }
+  body.dataset.vkey = '';
+}
 const afterPaint = fn => requestAnimationFrame(() => setTimeout(fn, 0));
 function queuePanel(intro) { if (intro) introNext = true; if (!ui.open || qPanel) return; qPanel = true; afterPaint(() => { qPanel = false; renderPanel(); }); }
 function render() {
@@ -1642,8 +1687,15 @@ function renderPanel() {
   const ae = document.activeElement; let fid = null, ss = null, se = null;
   if (ae && body.contains(ae) && ae.id) { fid = ae.id; try { ss = ae.selectionStart; se = ae.selectionEnd; } catch {} }
   const key = ui.open + '|' + (p && p.type === 'trading' ? ui.trTab : ''), same = body.dataset.for === key, scroll = body.scrollTop;
+  // Views already built for the same data and the same choices are kept and swapped back in, so going back to a tab
+  // or reopening a planet costs no HTML parsing, layout of new nodes or chart drawing.
+  const vkey = [dataRev, ymd(), ui.open, ui.trTab, JSON.stringify(ui.tf), ui.allTrades, ui.calMonth, ui.taskFilter, ui.jDate].join('§');
+  if (VCACHE.rev !== dataRev) { VCACHE.clear(); VCACHE.rev = dataRev; }
+  if (body.dataset.vkey !== vkey) stashBody(body);
   LISTC.clear();
-  body.innerHTML = isSun ? viewSun() : VIEWS[p.type](p, pd(p.id));
+  if (VCACHE.has(vkey)) { body.replaceChildren(VCACHE.get(vkey)); VCACHE.delete(vkey); }
+  else body.innerHTML = isSun ? viewSun() : VIEWS[p.type](p, pd(p.id));
+  body.dataset.vkey = vkey;
   body.dataset.for = key;
   body.scrollTop = same ? scroll : 0;
   if (introNext && !reduced) { introNext = false; body.classList.remove('intro'); void body.offsetWidth; body.classList.add('intro'); clearTimeout(body._it); body._it = setTimeout(() => body.classList.remove('intro'), 1000); }
@@ -1656,7 +1708,7 @@ function openPanel(id) {
   ui.open = id;
   if (!renderHead()) { ui.open = null; return; }
   const body = $('#pvBody');
-  if (!body.dataset.for || !body.dataset.for.startsWith(id + '|')) { body.innerHTML = ''; body.dataset.for = ''; }
+  if (!body.dataset.for || !body.dataset.for.startsWith(id + '|')) { stashBody(body); body.textContent = ''; body.dataset.for = ''; }
   $('#pv').classList.add('open');
   applyView(); markSel();
   queuePanel(true);
@@ -1834,6 +1886,7 @@ function planetForm(p) {
 }
 const fsec = t => `<div class="fsec">${t}</div>`;
 function tradeForm(p, d, t, date) {
+  markOutcomes(d);
   const v = (k, def = '') => esc(t && t[k] != null && t[k] !== '' ? String(t[k]).replace(/^(-?\d+)\.(\d+)$/, '$1,$2') : def);
   const setups = uniq(d.trades.map(x => x.setup).filter(Boolean)).sort(), syms = uniq(d.trades.map(x => x.symbol).concat(Object.keys(d.settings.pointValues || {})).filter(Boolean)).sort();
   const opt = (list, cur, blank = '—') => `<option value="">${blank}</option>` + list.map(x => `<option ${String(cur) === String(x) ? 'selected' : ''}>${esc(x)}</option>`).join('');
@@ -1846,12 +1899,13 @@ function tradeForm(p, d, t, date) {
     fsec('Esecuzione') +
     field('Quantità', `<input id="f-qty" name="qty" inputmode="decimal" autocomplete="off" value="${v('qty')}">`) + field('Entrata', `<input id="f-entry" name="entry" inputmode="decimal" autocomplete="off" value="${v('entry')}">`) + field('Uscita', `<input id="f-exit" name="exit" inputmode="decimal" autocomplete="off" value="${v('exit')}">`) +
     field('Stop loss', `<input id="f-stop" name="stop" inputmode="decimal" autocomplete="off" value="${v('stop')}">`) + field('Target', `<input id="f-target" name="target" inputmode="decimal" autocomplete="off" value="${v('target')}">`) + field('Valore punto', `<input id="f-mult" name="mult" inputmode="decimal" autocomplete="off" placeholder="1" value="${v('mult')}">`) +
-    field('Commissioni €', `<input id="f-fees" name="fees" inputmode="decimal" autocomplete="off" value="${v('fees')}">`) + field('P&L netto €', `<input id="f-pnl" name="pnl" placeholder="calcolato o manuale" autocomplete="off" value="${v('pnl')}" ${t ? 'data-touched="1"' : ''}>`, 'full') +
+    field(`Commissioni ${tsym()}`, `<input id="f-fees" name="fees" inputmode="decimal" autocomplete="off" value="${v('fees')}">`) + field(`P&L netto ${tsym()}`, `<input id="f-pnl" name="pnl" placeholder="calcolato o manuale" autocomplete="off" value="${v('pnl')}" ${t ? 'data-touched="1"' : ''}>`, 'full') +
     `<div class="calc" id="calc"></div>` +
     fsec('Analisi') +
     field('Setup', `<input id="f-setup" name="setup" list="setups" autocomplete="off" value="${v('setup')}" placeholder="es. Breakout apertura"><datalist id="setups">${setups.map(s => `<option value="${esc(s)}">`).join('')}</datalist>`) +
     field('Emozione', `<select id="f-emo" name="emotion">${opt(EMOTIONS, t ? t.emotion : '')}</select>`) +
     field('Esecuzione (1-5)', `<select id="f-grade" name="grade">${opt([1, 2, 3, 4, 5], t ? t.grade : '')}</select>`) +
+    field('Esito', `<select id="f-be" name="be"><option value="">Automatico (soglia break-even)</option><option value="1" ${t && t.be ? 'selected' : ''}>Break-even</option></select>`) +
     field('Piano rispettato', `<select id="f-plan" name="plan"><option value="">—</option><option value="si" ${t && t.plan === 'si' ? 'selected' : ''}>Sì</option><option value="no" ${t && t.plan === 'no' ? 'selected' : ''}>No</option></select>`) +
     `<div class="field full"><span>Tag</span><div class="tagpick">${tags.map(x => `<label class="tg"><input type="checkbox" name="tags" value="${esc(x)}" ${t && t.tags.includes(x) ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}</div></div>` +
     field('Nuovo tag', `<input id="f-newtag" name="newtag" autocomplete="off" placeholder="facoltativo">`) +
@@ -1933,10 +1987,10 @@ function tradeCalc() { // live preview of gross, net, risk and R while the trade
   if (net != null && !pnlEl.dataset.touched) pnlEl.value = String(net).replace('.', ',');
   const pnl = num(pnlEl.value), risk = en != null && st != null && q != null && en !== st ? Math.abs(en - st) * q * mult : null;
   const parts = [];
-  if (gross != null) parts.push(`Lordo <b>${eur(gross, true)}</b>`);
-  if (fees) parts.push(`commissioni ${eur(fees)}`);
-  if (pnl != null) parts.push(`netto <b class="${pnlCls(pnl)}">${eur(pnl, true)}</b>`);
-  if (risk) parts.push(`rischio ${eur(risk)}`, `risultato <b>${fmtR(pnl != null ? pnl / risk : null)}</b>`);
+  if (gross != null) parts.push(`Lordo <b>${usd(gross, true)}</b>`);
+  if (fees) parts.push(`commissioni ${usd(fees)}`);
+  if (pnl != null) parts.push(`netto <b class="${pnlCls(pnl)}">${usd(pnl, true)}</b>`);
+  if (risk) parts.push(`rischio ${usd(risk)}`, `risultato <b>${fmtR(pnl != null ? pnl / risk : null)}</b>`);
   if (en != null && st != null && tg != null && en !== st) parts.push(`R:R pianificato ${(Math.abs(tg - en) / Math.abs(en - st)).toFixed(2).replace('.', ',')}`);
   out.innerHTML = parts.length ? parts.join(' · ') : 'Inserisci quantità, entrata e uscita: il P&L si calcola da solo. Con lo stop loss ottieni anche il risultato in R.';
 }
@@ -1977,7 +2031,7 @@ const SUBMIT = {
     const t = { id: old ? old.id : uid(), date: normDate(fd.get('date')), timeIn: fd.get('timeIn') || '', timeOut: fd.get('timeOut') || '',
       symbol: String(fd.get('symbol') || '').trim().toUpperCase().slice(0, 24), market: fd.get('market') || '', dir: fd.get('dir') === 'short' ? 'short' : 'long',
       qty: num(fd.get('qty')), entry: num(fd.get('entry')), exit: num(fd.get('exit')), stop: num(fd.get('stop')), target: num(fd.get('target')), mult: num(fd.get('mult')), fees: num(fd.get('fees')),
-      pnl: num(fd.get('pnl')), setup: String(fd.get('setup') || '').trim().slice(0, 40), emotion: fd.get('emotion') || '', grade: fd.get('grade') || '', plan: fd.get('plan') || '',
+      pnl: num(fd.get('pnl')), setup: String(fd.get('setup') || '').trim().slice(0, 40), emotion: fd.get('emotion') || '', grade: fd.get('grade') || '', plan: fd.get('plan') || '', be: fd.get('be') === '1',
       tags: fd.getAll('tags').map(String), note: String(fd.get('note') || '').trim().slice(0, 3000), link: /^https?:\/{2}/i.test(String(fd.get('link') || '').trim()) ? String(fd.get('link')).trim().slice(0, 500) : '' };
     const nt = String(fd.get('newtag') || '').trim().slice(0, 30);
     if (nt) { if (!d.tags.includes(nt)) d.tags.push(nt); if (!t.tags.includes(nt)) t.tags.push(nt); }
@@ -1986,7 +2040,7 @@ const SUBMIT = {
     if (t.pnl == null) throw new Error('Inserisci il P&L netto, oppure quantità, entrata e uscita.');
     if (t.mult != null && d.settings.pointValues[t.symbol] == null) d.settings.pointValues[t.symbol] = t.mult;
     if (old) d.trades[d.trades.indexOf(old)] = t; else d.trades.push(t);
-    commit('p_' + p.id); toast(old ? 'Trade aggiornato' : `Trade registrato · ${eur(t.pnl, true)}`);
+    commit('p_' + p.id); toast(old ? 'Trade aggiornato' : `Trade registrato · ${usd(t.pnl, true)}`);
   },
   exam(fd, p, d) { const date = String(fd.get('date') || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Scegli la data della prova.');
     d.exams.push({ id: uid(), courseId: fd.get('course'), title: String(fd.get('title') || 'Prova').trim(), date, time: fd.get('time') || '', done: false, grade: '' }); commit('p_' + p.id); toast('Prova aggiunta'); },
@@ -2133,6 +2187,7 @@ document.addEventListener('change', e => {
   if (t.dataset.goal && pid) commit('p_' + pid);
   else if (t.dataset.tf && t.dataset.tf !== 'q') { ui.tf[t.dataset.tf] = t.value; queuePanel(); }
   else if (t.dataset.pacprice && pid) { const d = pd(pid), a = d && d.assets.find(x => x.id === t.dataset.pacprice), v = num(t.value); if (!a) return; if (v == null || v <= 0) { t.value = a.price != null ? String(a.price).replace('.', ',') : ''; toast('Inserisci un prezzo, es. 112,40'); return; } a.price = v; a.priceDate = ymd(); pacSnap(d); commit('p_' + pid); render(); toast('Prezzo aggiornato'); }
+  else if (t.dataset.setcur && pid) { pd(pid).settings.currency = t.value; commit('p_' + pid); render(); }
   else if (t.dataset.set && pid) { const v = num(t.value); pd(pid).settings[t.dataset.set] = v == null ? null : Math.abs(v); commit('p_' + pid); render(); }
 });
 document.addEventListener('keydown', e => {
