@@ -256,6 +256,18 @@ h3{font:600 22px/1.15 var(--f-display);margin:0;text-wrap:balance}
 .big{font:600 32px/1 var(--f-display);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .unit{font:500 12px var(--f-mono);color:var(--ink-3);margin-left:6px;letter-spacing:.04em}
 .pos{color:var(--good)} .neg{color:var(--bad)}
+.pacmonths{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:6px}
+.pm{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.pm b{width:100%;aspect-ratio:1;max-height:34px;border:1px solid var(--line-2);background:var(--card-2)}
+.pm.on b{background:var(--accent);border-color:var(--accent);box-shadow:0 0 14px -4px var(--accent)}
+.pm.now b{outline:1px solid var(--ink-3);outline-offset:2px}
+.pm span{font:500 9.5px var(--f-mono);color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-transform:uppercase}
+@media (max-width: 560px){ .pacmonths{grid-template-columns:repeat(6,minmax(0,1fr))} }
+.pactable td:first-child{min-width:170px}
+.pinput{width:92px;height:30px;text-align:right;font:500 13px var(--f-mono)}
+.legend{display:flex;gap:14px;margin-top:6px;font:500 10.5px var(--f-mono);color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.legend i{display:inline-block;width:14px;height:2px;margin-right:6px;vertical-align:middle}
+.legend i.dash{background:repeating-linear-gradient(90deg,var(--ink-3) 0 4px,transparent 4px 7px)}
 
 /* ---------- Panel ---------- */
 .pv{position:fixed;z-index:60;display:flex;flex-direction:column;
@@ -584,7 +596,7 @@ button,a,label,input,select,textarea,.check,.tick{touch-action:manipulation}
 .check:active .box{transform:scale(.86)}
 .card,.exam,.stat,.ptile{contain:content}
 .pv-body .view > section{content-visibility:auto;contain-intrinsic-size:auto 340px}
-.chart[data-chart="equity"]{height:200px} .chart[data-chart="study"]{height:150px} .chart[data-chart="weight"]{height:170px} .chart[data-chart="metric"]{height:160px}
+.chart[data-chart="equity"]{height:200px} .chart[data-chart="study"]{height:150px} .chart[data-chart="pacHist"],.chart[data-chart="pacProj"]{height:190px} .chart[data-chart="metric"]{height:160px}
 
 @media (min-width: 900px){
   .top.shift, .dock.shift{right:calc(var(--pw) + 12px)}
@@ -722,14 +734,14 @@ const TF0 = { range: 30, dir: '', setup: '', symbol: '', tag: '', q: '' };
 const TYPES = {
   uni:     { label: 'Studio',      desc: 'Corsi, prove, argomenti e ore di studio',           def: () => ({ courses: [], exams: [], topics: [], sessions: [] }) },
   trading: { label: 'Trading',     desc: 'Journal completo: trade, giornale, statistiche',    def: () => ({ trades: [], days: {}, rules: [], tags: DEFAULT_TAGS.slice(), settings: { dailyLossLimit: null, startBalance: null, riskPct: null, maxTrades: null, pointValues: {} } }) },
-  gym:     { label: 'Allenamento', desc: 'Split, sedute, record e peso corporeo',             def: () => ({ split: [], target: 4, sessions: [], weights: [] }) },
+  pac:     { label: 'Piano di accumulo', desc: 'Versamenti mensili, strumenti, rendimento e proiezione', def: () => ({ settings: { monthly: null, day: 1, start: '', rate: 6, years: 20, target: null }, assets: [], contribs: [], snaps: [] }) },
   goals:   { label: 'Obiettivi',   desc: 'Visione, obiettivi, abitudini, attività',           def: () => ({ vision: '', goals: [], habits: [], checks: {}, tasks: [] }) },
   custom:  { label: 'Generico',    desc: 'Un contatore con grafico, attività e appunti',      def: () => ({ metric: { name: '', unit: '' }, entries: [], tasks: [], notes: '' }) },
 };
 const COLORS = [['#A98BFF', 'Viola'], ['#3FD6A0', 'Smeraldo'], ['#FF7A6B', 'Corallo'], ['#4FA3FF', 'Oceano'], ['#FFC857', 'Ambra'], ['#8FE3F5', 'Ghiaccio'], ['#FF8CC6', 'Rosa'], ['#D9C08C', 'Sabbia']];
 const SIZES = { s: 12, m: 17, l: 23 };
 const SKINS = [['grid', 'Griglia'], ['bands', 'Bande'], ['land', 'Continenti'], ['lights', 'Luci']];
-const skinOf = p => (SKINS.some(s => s[0] === p.skin) ? p.skin : ({ uni: 'grid', trading: 'bands', gym: 'land', goals: 'lights' })[p.type] || SKINS[hash(p.id || '') % 4][0]);
+const skinOf = p => (SKINS.some(s => s[0] === p.skin) ? p.skin : ({ uni: 'grid', trading: 'bands', pac: 'land', goals: 'lights' })[p.type] || SKINS[hash(p.id || '') % 4][0]);
 const STATUS = { todo: 'Da fare', doing: 'In corso', done: 'Fatto' };
 const RING_MAX = 4;
 
@@ -747,6 +759,7 @@ function normalizeType(type, d) {
     out.trades.forEach(t => { if (t.timeIn == null) t.timeIn = t.time || ''; if (t.timeOut == null) t.timeOut = ''; if (!Array.isArray(t.tags)) t.tags = []; t.pnl = Number(t.pnl) || 0; });
   }
   if (type === 'custom') out.metric = Object.assign({ name: '', unit: '' }, out.metric);
+  if (type === 'pac') out.settings = Object.assign({ monthly: null, day: 1, start: '', rate: 6, years: 20, target: null }, out.settings);
   return out;
 }
 
@@ -795,6 +808,16 @@ const pd = id => D['p_' + id];
 const ofType = t => P().filter(p => p.type === t);
 function ensure() {
   if (!D.planets || !Array.isArray(D.planets.list)) D.planets = { list: [], seeded: !!(D.planets && D.planets.seeded) };
+  // Types that no longer exist: an empty gym planet becomes the accumulation plan, anything else keeps its data as a generic planet.
+  let retyped = false;
+  P().forEach(p => {
+    if (TYPES[p.type]) return;
+    const old = D['p_' + p.id] || {}, empty = !((old.sessions || []).length || (old.weights || []).length);
+    if (p.type === 'gym' && empty && !ofType('pac').length) { p.type = 'pac'; p.name = 'PAC'; p.color = '#FFC857'; D['p_' + p.id] = TYPES.pac.def(); }
+    else p.type = 'custom';
+    retyped = true; commit('p_' + p.id);
+  });
+  if (retyped) commit('planets');
   P().forEach(p => { D['p_' + p.id] = normalizeType(p.type, D['p_' + p.id]); });
   if (normalizeRings() && P().length) commit('planets');
 }
@@ -808,7 +831,7 @@ function seed() {
   D.planets = { seeded: true, list: [
     { id: 'uni', name: 'Università', type: 'uni', color: '#A98BFF', size: 'm', rings: false, skin: 'grid' },
     { id: 'trading', name: 'Trading', type: 'trading', color: '#3FD6A0', size: 'm', rings: true, skin: 'bands' },
-    { id: 'palestra', name: 'Palestra', type: 'gym', color: '#FF7A6B', size: 'm', rings: false, skin: 'land' },
+    { id: 'pac', name: 'PAC', type: 'pac', color: '#FFC857', size: 'm', rings: false, skin: 'land' },
     { id: 'obiettivi', name: 'Obiettivi', type: 'goals', color: '#4FA3FF', size: 'l', rings: false, skin: 'lights' },
   ] };
   D.p_uni = normalizeType('uni', {
@@ -816,7 +839,7 @@ function seed() {
     exams: [{ id: 'e-mat1', courseId: 'c-mat', title: 'Prova parziale', date: '2026-11-05', time: '', done: false, grade: '' },
             { id: 'e-eco1', courseId: 'c-eco', title: 'Prova parziale', date: '2026-11-06', time: '', done: false, grade: '' }] });
   D.p_trading = normalizeType('trading', {});
-  D.p_palestra = normalizeType('gym', { split: ['Upper A', 'Lower A', 'Upper B', 'Lower B'], target: 4 });
+  D.p_pac = normalizeType('pac', {});
   D.p_obiettivi = normalizeType('goals', {
     goals: [{ id: 'g1', title: 'Superare le prove parziali di novembre', area: 'Università', due: '2026-11-06', progress: 0 }],
     habits: [{ id: 'h1', name: 'Studio concentrato (almeno 2h)' }, { id: 'h2', name: 'Allenamento o 8.000 passi' }, { id: 'h3', name: 'Diario di trading compilato' }, { id: 'h4', name: 'A letto entro mezzanotte' }],
@@ -905,22 +928,9 @@ function tradeStats(list) {
   return { n: list.length, net, winRate: list.length ? wins.length / list.length : null, pf: gl > 0 ? gw / gl : (gw > 0 ? Infinity : null),
     avgW: wins.length ? gw / wins.length : null, avgL: losses.length ? -gl / losses.length : null, exp: list.length ? net / list.length : null };
 }
-function gymWeek(d) { const ws = ymd(weekStart()), we = ymd(addDays(weekStart(), 6)); return d.sessions.filter(s => s.date >= ws && s.date <= we); }
-function nextSplit(d) { const sp = d.split; if (!sp.length) return null; const last = [...d.sessions].sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id)).pop(); if (!last) return sp[0]; const i = sp.indexOf(last.day); return i < 0 ? sp[0] : sp[(i + 1) % sp.length]; }
 const habitDone = (d, hid, date = ymd()) => (d.checks[date] || []).includes(hid);
 function habitStreak(d, hid) { let n = 0, x = new Date(); if (!habitDone(d, hid, ymd(x))) x = addDays(x, -1); while (habitDone(d, hid, ymd(x)) && n < 999) { n++; x = addDays(x, -1); } return n; }
 function dayScore(d, date) { if (!d.habits.length) return 0; return (d.checks[date] || []).filter(id => d.habits.some(h => h.id === id)).length / d.habits.length; }
-const e1rm = (kg, reps) => { kg = +kg; reps = +reps; if (!kg || !reps) return 0; return reps === 1 ? kg : kg * (1 + reps / 30); };
-function prs(d) {
-  const m = new Map();
-  for (const s of d.sessions) for (const l of (s.lifts || [])) {
-    const name = String(l.ex || '').trim(); if (!name) continue;
-    const key = name.toLowerCase(), v = e1rm(l.kg, l.reps), cur = m.get(key);
-    if (!cur || v > cur.best) m.set(key, { name, best: v, kg: +l.kg, reps: +l.reps, date: s.date });
-  }
-  return [...m.values()].sort((a, b) => b.best - a.best);
-}
-const weightsSorted = d => [...d.weights].sort((a, b) => a.date.localeCompare(b.date));
 const openTasks = d => (d.tasks || []).filter(t => !t.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
 function entrySum(d, days) { const from = ymd(addDays(new Date(), -(days - 1))); return sum(d.entries.filter(e => e.date >= from).map(e => +e.value || 0)); }
 function mkTrade(o) {
@@ -935,10 +945,73 @@ function planetStat(p) {
   switch (p.type) {
     case 'uni': { const ex = upcomingExams(d)[0]; if (ex) { const n = daysUntil(ex.date); return `${courseName(d, ex.courseId)} · ${n === 0 ? 'oggi' : n === 1 ? 'domani' : 'tra ' + n + ' g'}`; } return `${fmtMin(studyMin(d, null))} in 7 g`; }
     case 'trading': { const m = monthTrades(d); return m.length ? `${eur(tradeStats(m).net, true)} nel mese` : 'nessun trade nel mese'; }
-    case 'gym': return `${gymWeek(d).length}/${d.target || 4} sedute`;
+    case 'pac': { if (!d.contribs.length) return d.settings.monthly ? `${eur(d.settings.monthly)} al mese` : 'imposta il piano'; const s = pacStats(d); return `${eur(s.value)} · ${fmtPctS(s.gainPct)}`; }
     case 'goals': return `abitudini ${d.habits.filter(h => habitDone(d, h.id)).length}/${d.habits.length}`;
     default: { if (d.metric.name) return `${fmtNum(entrySum(d, 7))} ${d.metric.unit || ''} in 7 g`.replace(/\s+/g, ' ').trim(); const o = openTasks(d).length; return `${o} ${o === 1 ? 'attività' : 'attività'} aperte`; }
   }
+}
+
+/* ================= Piano di accumulo: metrics ================= */
+const fmtPctS = v => v == null || !Number.isFinite(v) ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1).replace('.', ',') + '%';
+const ym = ds => String(ds).slice(0, 7);
+const ymAdd = (k, n) => { const [y, m] = k.split('-').map(Number), dt = new Date(y, m - 1 + n, 1); return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}`; };
+const monthName = k => { const [y, m] = k.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('it-IT', { month: 'short', year: '2-digit' }); };
+const PACC = new WeakMap();
+function pacStats(d) { // holdings and totals, cached per data object until the next change
+  const key = d.contribs.length + '|' + d.assets.map(a => a.id + ':' + a.price + ':' + a.alloc).join(',') + '|' + (d.contribs[d.contribs.length - 1] || {}).id;
+  const c = PACC.get(d); if (c && c.key === key) return c.s;
+  const rows = d.assets.map(a => {
+    const cs = d.contribs.filter(x => x.assetId === a.id);
+    const invested = sum(cs.map(x => +x.amount || 0)), net = sum(cs.map(x => (+x.amount || 0) - (+x.fees || 0)));
+    const qty = sum(cs.map(x => +x.qty || 0)), hasQty = cs.some(x => +x.qty > 0);
+    const price = +a.price || null, value = hasQty && price ? qty * price : net;
+    return { a, invested, net, qty: hasQty ? qty : null, avg: hasQty && qty ? net / qty : null, price, value, gain: value - invested, n: cs.length, priced: !!(hasQty && price) };
+  });
+  const orphan = d.contribs.filter(x => !d.assets.some(a => a.id === x.assetId));
+  const oInv = sum(orphan.map(x => +x.amount || 0)), oNet = sum(orphan.map(x => (+x.amount || 0) - (+x.fees || 0)));
+  const invested = sum(rows.map(r => r.invested)) + oInv, value = sum(rows.map(r => r.value)) + oNet, fees = sum(d.contribs.map(x => +x.fees || 0));
+  rows.forEach(r => { r.weight = value > 0 ? r.value / value * 100 : 0; });
+  const months = new Set(d.contribs.map(x => ym(x.date))), now = ym(ymd());
+  let streak = 0, k = months.has(now) ? now : ymAdd(now, -1); while (months.has(k)) { streak++; k = ymAdd(k, -1); }
+  const day = Math.min(28, Math.max(1, +d.settings.day || 1)), doneNow = months.has(now);
+  const nextK = doneNow ? ymAdd(now, 1) : now, next = `${nextK}-${pad(day)}`;
+  const first = d.contribs.length ? d.contribs.reduce((m, x) => (x.date < m ? x.date : m), d.contribs[0].date) : '';
+  const s = { rows, invested, value, fees, gain: value - invested, gainPct: invested > 0 ? (value - invested) / invested * 100 : null, months, streak, doneNow, next, late: !doneNow && next < ymd() ? Math.round((parseYmd(ymd()) - parseYmd(next)) / 864e5) : 0, first, thisMonth: sum(d.contribs.filter(x => ym(x.date) === now).map(x => +x.amount || 0)) };
+  PACC.set(d, { key, s }); return s;
+}
+function pacSnap(d) { // remember today's portfolio value so the history chart shows real performance
+  const v = Math.round(pacStats(d).value * 100) / 100, t = ymd();
+  d.snaps = d.snaps.filter(x => x.date !== t); if (d.contribs.length) d.snaps.push({ date: t, value: v });
+  if (d.snaps.length > 400) d.snaps = d.snaps.slice(-400);
+}
+function pacSplit(d, s, amount) { // how to split the next payment so the portfolio moves towards the target allocation
+  const assets = d.assets.filter(a => +a.alloc > 0), tot = sum(assets.map(a => +a.alloc));
+  if (!amount || !assets.length || !tot) return [];
+  const after = s.value + amount, val = id => (s.rows.find(r => r.a.id === id) || {}).value || 0;
+  const gaps = assets.map(a => ({ a, gap: Math.max(0, after * (+a.alloc / tot) - val(a.id)) })), g = sum(gaps.map(x => x.gap));
+  return gaps.map(x => ({ a: x.a, v: g > 0 ? amount * x.gap / g : amount * (+x.a.alloc / tot) }));
+}
+function pacHistory(d) { // invested (step) and value (snapshots, falling back to invested) at each event date
+  const ev = new Map();
+  d.contribs.forEach(x => ev.set(x.date, null)); d.snaps.forEach(sn => ev.set(sn.date, null));
+  const dates = [...ev.keys()].sort(); if (!dates.length) return [];
+  const snaps = [...d.snaps].sort((a, b) => a.date.localeCompare(b.date));
+  let inv = 0, ci = 0, lastV = null; const cs = [...d.contribs].sort((a, b) => a.date.localeCompare(b.date));
+  return dates.map(ds => {
+    let added = 0; while (ci < cs.length && cs[ci].date <= ds) { inv += +cs[ci].amount || 0; added += (+cs[ci].amount || 0) - (+cs[ci].fees || 0); ci++; }
+    const sn = snaps.filter(x => x.date === ds).pop();
+    lastV = sn ? +sn.value : (lastV == null ? inv : lastV + added);
+    return { x: fmtDate(ds, { day: 'numeric', month: 'short' }), a: Math.round(lastV), b: Math.round(inv) };
+  });
+}
+function pacProjection(d, s = pacStats(d)) {
+  const M = +d.settings.monthly || 0, R = (+d.settings.rate || 0) / 100, years = Math.min(50, Math.max(1, +d.settings.years || 20));
+  if (!M && !s.value) return { pts: [], fv: 0, inv: 0, years };
+  const r = Math.pow(1 + R, 1 / 12) - 1; let v = s.value, inv = s.invested; const pts = [{ x: 'oggi', a: Math.round(v), b: Math.round(inv) }];
+  for (let m = 1; m <= years * 12; m++) { v = v * (1 + r) + M; inv += M; if (m % 12 === 0) pts.push({ x: `${m / 12} a`, a: Math.round(v), b: Math.round(inv) }); }
+  let toTarget = null; const T = +d.settings.target || 0;
+  if (T && (M || s.value)) { if (s.value >= T) toTarget = 0; else { let w = s.value; for (let m = 1; m <= 720; m++) { w = w * (1 + r) + M; if (w >= T) { toTarget = m; break; } } } }
+  return { pts, fv: v, inv, years, toTarget };
 }
 
 /* ================= Trading journal: metrics ================= */
@@ -1038,6 +1111,24 @@ function lineChart(el, pts, o) {
     ${grid}<path d="${area}" style="fill:url(#${gid})"/><path d="${line}" class="ln" style="stroke:${col}"/>
     <circle cx="${X(pts.length - 1).toFixed(1)}" cy="${Y(last.y).toFixed(1)}" r="4.5" style="fill:${dot};stroke:#0D1428;stroke-width:2"/>${xl}</svg>`;
 }
+function dualChart(el, pts, o) { // a = value (filled), b = invested (dashed); the legend sits under the plot inside the same box
+  const W = chartW(el), H = (o.h || 190) - 22;
+  if (pts.length < 2) { el.innerHTML = `<div class="chart-empty">${o.empty}</div>`; return; }
+  const padL = 56, padR = 14, padT = 14, padB = 26, iw = W - padL - padR, ih = H - padT - padB;
+  const all = pts.flatMap(p => [p.a, p.b]), ticks = niceTicks(Math.min(0, ...all), Math.max(...all, 1), 4), lo = ticks[0], hi = ticks[ticks.length - 1];
+  const X = i => padL + i / (pts.length - 1) * iw, Y = v => padT + (1 - (v - lo) / (hi - lo || 1)) * ih;
+  const path = k => pts.map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p[k]).toFixed(1)}`).join('');
+  const la = path('a'), area = `${la}L${X(pts.length - 1).toFixed(1)},${Y(lo).toFixed(1)}L${X(0).toFixed(1)},${Y(lo).toFixed(1)}Z`, gid = 'g' + Math.random().toString(36).slice(2, 8);
+  const grid = ticks.map(t => `<line x1="${padL}" x2="${W - padR}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" class="gl"/><text x="${padL - 8}" y="${(Y(t) + 3.5).toFixed(1)}" text-anchor="end" class="tl">${esc(eurAxis(t))}</text>`).join('');
+  const idx = [0, Math.floor((pts.length - 1) / 2), pts.length - 1].filter((v, i, a) => a.indexOf(v) === i);
+  const xl = idx.map(i => `<text x="${X(i).toFixed(1)}" y="${H - 7}" text-anchor="${i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle'}" class="tl">${esc(pts[i].x)}</text>`).join('');
+  const last = pts[pts.length - 1];
+  el.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label || '')}">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accent);stop-opacity:.3"/><stop offset="1" style="stop-color:var(--accent);stop-opacity:0"/></linearGradient></defs>
+    ${grid}<path d="${area}" style="fill:url(#${gid})"/><path d="${path('b')}" class="ln" style="stroke:var(--ink-3);stroke-dasharray:5 5"/><path d="${la}" class="ln" style="stroke:var(--accent)"/>
+    <circle cx="${X(pts.length - 1).toFixed(1)}" cy="${Y(last.a).toFixed(1)}" r="4.5" style="fill:var(--accent);stroke:#0D1428;stroke-width:2"/>${xl}</svg>
+    <div class="legend"><span><i style="background:var(--accent)"></i>Valore</span><span><i class="dash"></i>Versato</span></div>`;
+}
 function barChart(el, data, o) {
   const W = chartW(el), H = o.h || 150;
   if (!data.some(d => d.v > 0)) { el.innerHTML = `<div class="chart-empty">${o.empty}</div>`; return; }
@@ -1081,7 +1172,8 @@ function drawChart(el) {
   else if (k === 'weekday') { const names = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'], v = Array(7).fill(0); chartList(d, el.dataset.scope).forEach(t => { v[(parseYmd(t.date).getDay() + 6) % 7] += t.pnl; }); const n = v[5] || v[6] ? 7 : 5; pnlBars(el, names.slice(0, n).map((x, i) => ({ x, v: Math.round(v[i] * 100) / 100, title: `${x} · ${eur(v[i], true)}` })), { every: 1, fmt: eurAxis, label: 'P&L per giorno della settimana', empty: 'Nessun trade nel periodo.' }); }
   else if (k === 'hour') { const m = new Map(); chartList(d, el.dataset.scope).forEach(t => { const h = parseInt(t.timeIn, 10); if (Number.isFinite(h)) m.set(h, (m.get(h) || 0) + t.pnl); }); const hs = [...m.keys()]; if (!hs.length) { el.innerHTML = '<div class="chart-empty">Inserisci l\'ora di entrata nei trade per vedere le fasce orarie migliori.</div>'; return; } const a = Math.min(...hs), b = Math.max(...hs); pnlBars(el, Array.from({ length: b - a + 1 }, (_, i) => { const h = a + i, v = m.get(h) || 0; return { x: `${h}`, v: Math.round(v * 100) / 100, title: `${pad(h)}:00–${pad(h)}:59 · ${eur(v, true)}` }; }), { every: 1, fmt: eurAxis, label: 'P&L per fascia oraria', empty: '' }); }
   else if (k === 'study') { const data = dailyBars(14, ds => sum(d.sessions.filter(s => s.date === ds).map(s => +s.min || 0))); data.forEach(x => x.title = `${fmtDate(x.ds)} · ${fmtMin(x.v)}`); barChart(el, data, { h: 150, every: 2, fmt: v => v >= 60 ? (v / 60).toFixed(v % 60 ? 1 : 0).replace('.', ',') + 'h' : v + 'm', label: 'Minuti di studio, ultimi 14 giorni', empty: 'Nessuna sessione negli ultimi 14 giorni. Avvia il timer per iniziare a contare.' }); }
-  else if (k === 'weight') { const ws = weightsSorted(d).slice(-60); lineChart(el, ws.map(w => ({ x: fmtDate(w.date), y: +w.kg })), { h: 170, zero: false, padL: 46, fmt: v => String(Math.round(v * 10) / 10).replace('.', ','), label: 'Peso corporeo', empty: 'Registra il peso un paio di volte a settimana, alla stessa ora, per vedere il trend.' }); }
+  else if (k === 'pacHist') { const h = pacHistory(d); dualChart(el, h, { h: 190, label: 'Valore e versato nel tempo', empty: 'Registra il primo versamento per vedere l\'andamento.' }); }
+  else if (k === 'pacProj') { const pr = pacProjection(d); dualChart(el, pr.pts, { h: 190, label: 'Proiezione del piano', empty: 'Imposta il versamento mensile per vedere la proiezione.' }); }
   else if (k === 'metric') { const data = dailyBars(30, ds => sum(d.entries.filter(e => e.date === ds).map(e => +e.value || 0))); data.forEach(x => x.title = `${fmtDate(x.ds)} · ${fmtNum(x.v)} ${d.metric.unit || ''}`); barChart(el, data, { h: 160, every: 5, fmt: v => fmtNum(v), label: d.metric.name, empty: 'Registra il primo valore per vedere il grafico degli ultimi 30 giorni.' }); }
 }
 const chartRO = 'ResizeObserver' in window ? new ResizeObserver(entries => {
@@ -1417,34 +1509,50 @@ function viewTrading(p, d) {
   switch (ui.trTab) { case 'trades': return trTrades(p, d); case 'journal': return trJournal(p, d); case 'stats': return trStats(p, d); case 'setup': return trSetup(p, d); default: return trOverview(p, d); }
 }
 
-function viewGym(p, d) {
-  const ws = weekStart(), wk = gymWeek(d), tgt = d.target || 4, nx = nextSplit(d);
-  const week = Array.from({ length: 7 }, (_, i) => { const dt = addDays(ws, i), ds = ymd(dt); return { dt, ds, s: d.sessions.filter(x => x.date === ds) }; });
-  const sessions = [...d.sessions].sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id));
-  const PR = prs(d), W = weightsSorted(d), lastW = W[W.length - 1], w4 = W.filter(w => w.date <= ymd(addDays(new Date(), -28))).pop();
-  const delta = lastW && w4 ? Math.round((lastW.kg - w4.kg) * 10) / 10 : null;
-  const liftTxt = s => (s.lifts || []).filter(l => l.ex).map(l => `${l.ex} ${String(l.kg ?? '').replace('.', ',')}×${l.reps ?? ''}`).join(' · ');
+function viewPac(p, d) {
+  const st = d.settings, s = pacStats(d), M = +st.monthly || 0, split = pacSplit(d, s, M), pr = pacProjection(d, s);
+  const nowK = ym(ymd()), months = Array.from({ length: 12 }, (_, i) => ymAdd(nowK, i - 11));
+  const contribs = [...d.contribs].sort((a, b) => (b.date + b.id).localeCompare(a.date + a.id));
+  const aName = id => (d.assets.find(a => a.id === id) || {}).name || 'Strumento eliminato';
+  const nextTxt = s.doneNow ? `Fatto questo mese · prossimo ${fmtDate(s.next, { day: 'numeric', month: 'long' })}` : s.late ? `In ritardo di ${s.late} ${s.late === 1 ? 'giorno' : 'giorni'}` : `Previsto il ${fmtDate(s.next, { day: 'numeric', month: 'long' })}`;
+  const totAlloc = sum(d.assets.map(a => +a.alloc || 0));
+  const setup = !M ? `<section class="alerts"><div class="alert warn"><b>Imposta il piano</b><span>Scegli quanto versi al mese e in che giorno: così ti ricordo il versamento e calcolo la proiezione.</span><button class="btn sm" data-act="sheet" data-kind="pac-settings" data-p="${p.id}">Imposta</button></div></section>` : '';
   return `<div class="view">
-    <div class="vh"><p class="sub">Sedute della settimana, record stimati e peso. Il dettaglio delle serie resta su Liftoff.</p><div class="actions"><button class="btn sm" data-act="sheet" data-kind="split" data-p="${p.id}">Split</button><button class="btn sm primary" data-act="sheet" data-kind="workout" data-p="${p.id}">${I.plus}Allenamento</button></div></div>
-    <section class="grid2">
-      <div class="card"><div class="card-h"><div><h2>Questa settimana</h2><div class="label">Settimana ${isoWeek(new Date())} · obiettivo ${tgt}</div></div><span class="big" style="font-size:26px">${wk.length}/${tgt}</span></div>
-        <div class="segs">${Array.from({ length: tgt }, (_, i) => `<i class="${i < wk.length ? 'on' : ''}"></i>`).join('')}</div>
-        <div class="week">${week.map(w => `<div class="wd ${w.s.length ? 'on' : ''} ${w.ds === ymd() ? 'today' : ''}"><span class="label">${w.dt.toLocaleDateString('it-IT', { weekday: 'short' }).slice(0, 3)}</span><b>${w.s.length ? esc(w.s[0].day || '✓') : w.dt.getDate()}</b></div>`).join('')}</div></div>
-      <div class="card"><div class="card-h"><div><h2>Prossima seduta</h2><div class="label">Ordine dello split</div></div></div>
-        <div class="nextday">${nx ? esc(nx) : '—'}</div>
-        <div class="split">${d.split.map(x => `<span class="chip ${x === nx ? 'ice' : ''}">${esc(x)}</span>`).join('') || '<span class="muted">Imposta lo split per sapere sempre cosa tocca.</span>'}</div>
-        <div style="margin-top:14px"><button class="btn sm" data-act="log-next" data-p="${p.id}" ${nx ? '' : 'disabled'}>${I.check}Fatto oggi${nx ? ': ' + esc(nx) : ''}</button></div></div>
+    <div class="vh"><p class="sub">Versamenti costanti, prezzo medio, rendimento reale e dove arrivi se continui così.</p><div class="actions"><button class="btn sm" data-act="sheet" data-kind="pac-settings" data-p="${p.id}">Piano</button><button class="btn sm" data-act="sheet" data-kind="pac-asset" data-p="${p.id}">${I.plus}Strumento</button><button class="btn sm primary" data-act="sheet" data-kind="pac-contrib" data-p="${p.id}">${I.plus}Versamento</button></div></div>
+    ${setup}
+    <section class="kpis">
+      ${kpi('Valore attuale', d.contribs.length ? eur(s.value) : '—', '', s.rows.some(r => r.priced) ? 'ai prezzi che hai inserito' : 'inserisci i prezzi per il valore reale')}
+      ${kpi('Versato', eur(s.invested), '', s.fees ? `di cui commissioni ${eur(s.fees)}` : (s.first ? `dal ${fmtDate(s.first, { month: 'short', year: 'numeric' })}` : ''))}
+      ${kpi('Guadagno', d.contribs.length ? eur(s.gain, true) : '—', s.gain > 0 ? 'pos' : s.gain < 0 ? 'neg' : '', fmtPctS(s.gainPct))}
+      ${kpi('Questo mese', s.doneNow ? eur(s.thisMonth) : M ? 'Da fare' : '—', s.doneNow ? 'pos' : s.late ? 'neg' : '', nextTxt)}
+      ${kpi('Costanza', `${s.streak}<small> ${s.streak === 1 ? 'mese' : 'mesi'}</small>`, '', 'mesi di fila con un versamento')}
     </section>
+    <section class="card"><div class="card-h"><div><h2>Ultimi 12 mesi</h2><div class="label">Un quadrato per mese · pieno se hai versato</div></div></div>
+      <div class="pacmonths">${months.map(k => { const v = sum(d.contribs.filter(x => ym(x.date) === k).map(x => +x.amount || 0)); return `<div class="pm ${v ? 'on' : ''} ${k === nowK ? 'now' : ''}" title="${esc(monthName(k))}${v ? ' · ' + esc(eur(v)) : ''}"><b></b><span>${esc(monthName(k))}</span></div>`; }).join('')}</div></section>
     <section class="grid2">
-      <div class="card"><div class="card-h"><div><h2>Record stimati</h2><div class="label">1RM stimato (Epley) dalla serie migliore</div></div></div>
-        ${PR.length ? `<div class="rows">${PR.slice(0, 10).map(r => `<div class="row"><div class="t">${esc(r.name)}<small>${String(r.kg).replace('.', ',')} kg × ${r.reps} · ${esc(fmtDate(r.date))}</small></div><span class="big" style="font-size:20px">${Math.round(r.best)}<span class="unit">kg</span></span></div>`).join('')}</div>` : '<p class="muted">Quando registri un allenamento, aggiungi la serie migliore dei fondamentali: qui vedrai crescere i tuoi record.</p>'}</div>
-      <div class="card"><div class="card-h"><div><h2>Peso corporeo</h2><div class="label">${lastW ? `Ultimo ${String(lastW.kg).replace('.', ',')} kg · ${esc(fmtDate(lastW.date))}` : 'Nessuna misura'}</div></div>${delta != null ? `<span class="chip ${delta >= 0 ? 'good' : 'warn'}">${delta >= 0 ? '+' : '−'}${String(Math.abs(delta)).replace('.', ',')} kg / 4 sett.</span>` : ''}</div>
-        <div class="chart" data-chart="weight" data-p="${p.id}"></div>
-        <form class="inline" data-form="weight" data-p="${p.id}"><input id="wKg-${p.id}" name="kg" inputmode="decimal" placeholder="Peso di oggi in kg" autocomplete="off"><button class="btn sm" type="submit">Registra</button></form></div>
+      <div class="card"><div class="card-h"><div><h2>Andamento</h2><div class="label">Valore del portafoglio e totale versato</div></div></div><div class="chart" data-chart="pacHist" data-p="${p.id}"></div></div>
+      <div class="card"><div class="card-h"><div><h2>Prossimo versamento</h2><div class="label">${esc(nextTxt)}</div></div>${M ? `<span class="big" style="font-size:24px">${eur(M)}</span>` : ''}</div>
+        ${split.length ? `<div class="rows">${split.map(x => `<div class="row"><div class="t">${esc(x.a.name)}<small>obiettivo ${fmtNum(+x.a.alloc)}% · ora ${fmtNum(Math.round(((s.rows.find(r => r.a.id === x.a.id) || {}).weight || 0) * 10) / 10)}%</small></div><span class="big" style="font-size:18px">${eur(Math.round(x.v))}</span></div>`).join('')}</div>
+          <p class="muted" style="margin-top:10px">Diviso per riportare il portafoglio verso le percentuali obiettivo, senza vendere niente.</p>`
+          : `<p class="muted">${M ? 'Aggiungi gli strumenti con una percentuale obiettivo e ti dico come dividere ogni versamento.' : 'Imposta l\'importo mensile del piano.'}</p>`}
+        <div style="margin-top:14px"><button class="btn sm primary" data-act="sheet" data-kind="pac-contrib" data-p="${p.id}">${I.check}Registra versamento</button></div></div>
     </section>
-    <section class="card"><div class="card-h"><div><h2>Storico sedute</h2><div class="label">${sessions.length} sedute</div></div></div>
-      ${sessions.length ? `<div class="rows">${sessions.slice(0, 20).map(s => `<div class="row"><span class="chip ice">${esc(s.day || 'Seduta')}</span><div class="t">${esc(fmtDate(s.date, { weekday: 'short', day: 'numeric', month: 'short' }))}${liftTxt(s) || s.note ? `<small>${esc([liftTxt(s), s.note].filter(Boolean).join(' — '))}</small>` : ''}</div>${delBtn(p.id, 'session', s.id, 'Elimina seduta')}</div>`).join('')}</div>`
-        : empty('Ancora nessuna seduta', 'Segna la seduta appena finisci: con “Fatto oggi” basta un tocco.', `<button class="btn sm" data-act="sheet" data-kind="workout" data-p="${p.id}">${I.plus}Allenamento</button>`)}</section>
+    <section class="card"><div class="card-h"><div><h2>Strumenti</h2><div class="label">${d.assets.length ? `Aggiorna il prezzo quando vuoi: valore e guadagno si ricalcolano${totAlloc && Math.round(totAlloc) !== 100 ? ` · le percentuali obiettivo sommano ${fmtNum(totAlloc)}%` : ''}` : 'ETF, fondi o azioni in cui investi'}</div></div><button class="btn sm ghost" data-act="sheet" data-kind="pac-asset" data-p="${p.id}">${I.plus}Strumento</button></div>
+      ${d.assets.length ? `<div class="tablewrap"><table class="pactable"><thead><tr><th>Strumento</th><th class="n">Versato</th><th class="n">Quote</th><th class="n">Prezzo medio</th><th class="n">Prezzo attuale</th><th class="n">Valore</th><th class="n">Guadagno</th><th class="n">Peso / obiettivo</th><th></th></tr></thead><tbody>
+        ${s.rows.map(r => `<tr><td><strong>${esc(r.a.name)}</strong>${r.a.ticker ? `<br><small class="muted">${esc(r.a.ticker)}</small>` : ''}</td><td class="n">${eur(r.invested)}</td><td class="n">${r.qty != null ? fmtNum(Math.round(r.qty * 1000) / 1000) : '—'}</td><td class="n">${r.avg != null ? eur(r.avg) : '—'}</td>
+          <td class="n"><input class="pinput" id="pp-${r.a.id}" data-pacprice="${r.a.id}" data-p="${p.id}" inputmode="decimal" value="${r.a.price != null ? esc(String(r.a.price).replace('.', ',')) : ''}" placeholder="€" aria-label="Prezzo attuale ${esc(r.a.name)}"></td>
+          <td class="n">${eur(r.value)}</td><td class="n ${r.gain > 0 ? 'pos' : r.gain < 0 ? 'neg' : ''}">${r.invested ? eur(r.gain, true) + '<br><small>' + fmtPctS(r.invested ? r.gain / r.invested * 100 : null) + '</small>' : '—'}</td>
+          <td class="n">${fmtNum(Math.round(r.weight * 10) / 10)}% / ${fmtNum(+r.a.alloc || 0)}%</td>
+          <td class="n"><button class="iconbtn" data-act="sheet" data-kind="pac-asset" data-p="${p.id}" data-id="${r.a.id}" aria-label="Modifica ${esc(r.a.name)}">${I.edit || '✎'}</button></td></tr>`).join('')}
+        </tbody></table></div>` : empty('Nessuno strumento', 'Aggiungi l\'ETF o il fondo del tuo PAC, con la percentuale che vuoi tenere nel portafoglio.', `<button class="btn sm" data-act="sheet" data-kind="pac-asset" data-p="${p.id}">${I.plus}Strumento</button>`)}</section>
+    <section class="grid2">
+      <div class="card"><div class="card-h"><div><h2>Proiezione</h2><div class="label">${eur(M)} al mese · ${fmtNum(+st.rate || 0)}% annuo stimato · ${pr.years} anni</div></div><button class="btn sm ghost" data-act="sheet" data-kind="pac-settings" data-p="${p.id}">Modifica</button></div>
+        <div class="chart" data-chart="pacProj" data-p="${p.id}"></div>
+        ${pr.pts.length ? `<p class="muted" style="margin-top:10px">Tra ${pr.years} anni: circa <strong style="color:var(--ink)">${eur(Math.round(pr.fv))}</strong>, di cui versati ${eur(Math.round(pr.inv))}.${st.target ? (pr.toTarget === 0 ? ` Obiettivo di ${eur(st.target)} già raggiunto.` : pr.toTarget ? ` Obiettivo di ${eur(st.target)} in circa ${Math.floor(pr.toTarget / 12)} anni e ${pr.toTarget % 12} mesi.` : ` Con questi numeri l'obiettivo di ${eur(st.target)} resta fuori portata: aumenta il versamento.`) : ''} È una stima con rendimento costante, non una previsione.</p>` : ''}</div>
+      <div class="card"><div class="card-h"><div><h2>Versamenti</h2><div class="label">${d.contribs.length} in totale</div></div></div>
+        ${contribs.length ? `<div class="rows">${contribs.slice(0, 24).map(x => `<div class="row"><div class="t">${esc(aName(x.assetId))}<small>${esc(fmtDate(x.date, { day: 'numeric', month: 'short', year: 'numeric' }))}${x.qty ? ` · ${fmtNum(Math.round(x.qty * 1000) / 1000)} quote a ${eur(x.price)}` : ''}${x.note ? ' · ' + esc(x.note) : ''}</small></div><span class="big" style="font-size:18px">${eur(x.amount)}</span>${delBtn(p.id, 'contrib', x.id, 'Elimina versamento')}</div>`).join('')}</div>`
+          : '<p class="muted">Ogni mese registra quanto hai versato e, se vuoi, il prezzo di acquisto: così calcolo quote e prezzo medio.</p>'}</div>
+    </section>
   </div>`;
 }
 
@@ -1498,7 +1606,7 @@ function viewCustom(p, d) {
       <textarea id="notes-${p.id}" class="vision" data-text="notes" data-p="${p.id}" placeholder="Idee, link, cose da ricordare su ${esc(p.name)}.">${esc(d.notes)}</textarea></section>
   </div>`;
 }
-const VIEWS = { uni: viewUni, trading: viewTrading, gym: viewGym, goals: viewGoals, custom: viewCustom };
+const VIEWS = { uni: viewUni, trading: viewTrading, pac: viewPac, goals: viewGoals, custom: viewCustom };
 
 /* ================= Render scheduling ================= */
 // A tap updates the touched control immediately; everything derived from it is rebuilt
@@ -1707,7 +1815,6 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.ad
 
 /* ================= Sheets ================= */
 const sheet = $('#sheet'), sheetForm = $('#sheetForm');
-function liftRow(l = {}) { return `<div class="lift"><input name="ex" placeholder="Esercizio" value="${esc(l.ex || '')}" aria-label="Esercizio" autocomplete="off" list="exlist"><input name="kg" inputmode="decimal" placeholder="kg" value="${esc(l.kg ?? '')}" aria-label="Chili"><input name="reps" inputmode="numeric" placeholder="rip." value="${esc(l.reps ?? '')}" aria-label="Ripetizioni"><button type="button" class="iconbtn" data-act="lift-del" aria-label="Rimuovi esercizio">${I.x}</button></div>`; }
 function ringOptions(p) { // rings with room (max four planets each), plus a new outer ring
   const rings = ringsOf(), cur = p ? p.ring : null;
   const firstFree = rings.findIndex(r => r.length < RING_MAX);
@@ -1776,17 +1883,32 @@ function openSheet(kind, pid = '', id = '', extra = '') {
     case 'examDone': { const e = d.exams.find(x => x.id === id); if (!e) return; eb = courseName(d, e.courseId); title = 'Com\'è andata?'; submit = 'Registra';
       body = field('Voto (/30)', `<input id="f-grade30" name="grade" placeholder="es. 27 oppure 30L" autocomplete="off">`, 'full') + `<p class="muted field full">Lascia vuoto se il voto non è ancora uscito.</p>`; break; }
     case 'course': title = 'Nuovo corso'; body = field('Nome del corso', `<input id="f-cname" name="name" required placeholder="es. Statistica" autocomplete="off">`, 'full'); break;
-    case 'workout': {
-      title = 'Allenamento'; const nx = nextSplit(d), names = [...new Set(d.sessions.flatMap(s => (s.lifts || []).map(l => l.ex)).filter(Boolean))];
-      body = field('Data', `<input id="f-wdate" name="date" type="date" value="${ymd()}" required>`) +
-        field('Giorno', `<select id="f-wday" name="day">${d.split.map(x => `<option ${x === nx ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option>Altro</option></select>`) +
-        `<div class="field full"><span>Serie migliore per esercizio (facoltativo)</span><div class="lifts" id="lifts">${liftRow()}${liftRow()}</div><button type="button" class="btn sm ghost" data-act="lift-add" style="align-self:flex-start">${I.plus}Esercizio</button><datalist id="exlist">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist></div>` +
-        field('Note', `<textarea id="f-wnote" name="note" rows="2" placeholder="Energia, sensazioni, dolori"></textarea>`, 'full');
-      break;
-    }
-    case 'split': title = 'Split e frequenza';
-      body = field('Giorni dello split, in ordine (separati da virgola)', `<input id="f-split" name="split" value="${esc(d.split.join(', '))}" placeholder="Upper A, Lower A, Upper B, Lower B">`, 'full') +
-        field('Sedute a settimana', `<select id="f-target" name="target">${[2, 3, 4, 5, 6, 7].map(n => `<option ${n === (d.target || 4) ? 'selected' : ''}>${n}</option>`).join('')}</select>`); break;
+    case 'pac-settings': { const st = d.settings; title = 'Il tuo piano';
+      body = field('Versamento mensile (€)', `<input id="f-pmon" name="monthly" inputmode="decimal" value="${st.monthly != null ? esc(String(st.monthly).replace('.', ',')) : ''}" placeholder="es. 200" required autocomplete="off">`) +
+        field('Giorno del mese', `<select id="f-pday" name="day">${Array.from({ length: 28 }, (_, i) => `<option ${i + 1 === (+st.day || 1) ? 'selected' : ''}>${i + 1}</option>`).join('')}</select>`) +
+        field('Rendimento annuo stimato (%)', `<input id="f-prate" name="rate" inputmode="decimal" value="${esc(String(st.rate ?? 6).replace('.', ','))}" autocomplete="off">`) +
+        field('Orizzonte (anni)', `<input id="f-pyears" name="years" inputmode="numeric" value="${esc(String(st.years ?? 20))}" autocomplete="off">`) +
+        field('Obiettivo di capitale (€, facoltativo)', `<input id="f-ptarget" name="target" inputmode="decimal" value="${st.target != null ? esc(String(st.target).replace('.', ',')) : ''}" placeholder="es. 100000" autocomplete="off">`, 'full') +
+        `<p class="muted field full">Il rendimento serve solo per la proiezione: per un ETF azionario globale si usa spesso un 5–7% annuo, ma non è garantito.</p>`; break; }
+    case 'pac-asset': { const a = id ? d.assets.find(x => x.id === id) : null; if (id && !a) return; title = a ? a.name : 'Nuovo strumento'; submit = a ? 'Salva' : 'Aggiungi';
+      body = field('Nome', `<input id="f-aname" name="name" value="${esc(a ? a.name : '')}" required placeholder="es. Vanguard FTSE All-World" autocomplete="off">`, 'full') +
+        field('Ticker o ISIN', `<input id="f-aticker" name="ticker" value="${esc(a ? a.ticker || '' : '')}" placeholder="es. VWCE" autocomplete="off">`) +
+        field('Percentuale obiettivo (%)', `<input id="f-aalloc" name="alloc" inputmode="decimal" value="${a && a.alloc != null ? esc(String(a.alloc).replace('.', ',')) : (d.assets.length ? '' : '100')}" placeholder="es. 80" autocomplete="off">`) +
+        field('Prezzo attuale (€, facoltativo)', `<input id="f-aprice" name="price" inputmode="decimal" value="${a && a.price != null ? esc(String(a.price).replace('.', ',')) : ''}" autocomplete="off">`);
+      if (a) left = `<button type="button" class="btn sm danger" data-act="del" data-p="${p.id}" data-kind="asset" data-id="${a.id}">Elimina strumento</button>`;
+      break; }
+    case 'pac-contrib': {
+      if (!d.assets.length) { toast('Aggiungi prima lo strumento in cui investi'); return openSheet('pac-asset', pid); }
+      const s = pacStats(d), M = +d.settings.monthly || 0, split = pacSplit(d, s, M), sugg = split.length ? split.reduce((m, x) => (x.v > m.v ? x : m)) : null;
+      title = 'Nuovo versamento'; submit = 'Registra';
+      body = field('Data', `<input id="f-cdate" name="date" type="date" value="${ymd()}" required>`) +
+        field('Strumento', `<select id="f-casset" name="asset">${d.assets.map(a => `<option value="${a.id}" ${sugg && sugg.a.id === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>`) +
+        field('Importo versato (€)', `<input id="f-camount" name="amount" inputmode="decimal" value="${sugg ? esc(String(Math.round(sugg.v))) : M ? esc(String(M)) : ''}" required autocomplete="off">`) +
+        field('Commissioni (€)', `<input id="f-cfees" name="fees" inputmode="decimal" placeholder="0" autocomplete="off">`) +
+        field('Prezzo di acquisto per quota (€)', `<input id="f-cprice" name="price" inputmode="decimal" placeholder="facoltativo" autocomplete="off">`) +
+        field('Quote acquistate', `<input id="f-cqty" name="qty" inputmode="decimal" placeholder="calcolate dal prezzo se vuoto" autocomplete="off">`) +
+        field('Nota', `<input id="f-cnote" name="note" placeholder="facoltativa" autocomplete="off">`, 'full');
+      break; }
     case 'goal': title = 'Nuovo obiettivo';
       body = field('Obiettivo', `<input id="f-gtitle" name="title" required placeholder="Misurabile: es. Media del 27 alla sessione" autocomplete="off">`, 'full') +
         field('Area', `<input id="f-garea" name="area" placeholder="es. Università" autocomplete="off">`) + field('Scadenza', `<input id="f-gdue" name="due" type="date">`); break;
@@ -1870,12 +1992,30 @@ const SUBMIT = {
     d.exams.push({ id: uid(), courseId: fd.get('course'), title: String(fd.get('title') || 'Prova').trim(), date, time: fd.get('time') || '', done: false, grade: '' }); commit('p_' + p.id); toast('Prova aggiunta'); },
   examDone(fd, p, d, id) { const e = d.exams.find(x => x.id === id); if (!e) return; e.done = true; e.grade = String(fd.get('grade') || '').trim().slice(0, 6); commit('p_' + p.id); toast('Registrata nel libretto'); },
   course(fd, p, d) { const name = String(fd.get('name') || '').trim(); if (!name) throw new Error('Scrivi il nome del corso.'); d.courses.push({ id: uid(), name }); commit('p_' + p.id); toast('Corso aggiunto'); },
-  workout(fd, p, d) {
-    const ex = fd.getAll('ex'), kg = fd.getAll('kg'), reps = fd.getAll('reps');
-    const lifts = ex.map((e, i) => ({ ex: String(e).trim(), kg: num(kg[i]), reps: num(reps[i]) })).filter(l => l.ex);
-    d.sessions.push({ id: uid(), date: normDate(fd.get('date')), day: fd.get('day') || '', lifts, note: String(fd.get('note') || '').trim() }); commit('p_' + p.id); toast('Seduta registrata');
+  'pac-settings'(fd, p, d) {
+    const m = num(fd.get('monthly')); if (m == null || m <= 0) throw new Error('Inserisci quanto versi al mese, es. 200.');
+    const r = num(fd.get('rate')), y = num(fd.get('years')), t = num(fd.get('target'));
+    Object.assign(d.settings, { monthly: Math.round(m * 100) / 100, day: Math.min(28, Math.max(1, Number(fd.get('day')) || 1)), rate: r == null ? 6 : Math.min(30, Math.max(-20, r)), years: y == null ? 20 : Math.min(50, Math.max(1, Math.round(y))), target: t && t > 0 ? Math.round(t) : null });
+    if (!d.settings.start) d.settings.start = ymd(); commit('p_' + p.id); toast('Piano aggiornato');
   },
-  split(fd, p, d) { d.split = String(fd.get('split') || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 10); d.target = Math.min(7, Math.max(1, Number(fd.get('target')) || 4)); commit('p_' + p.id); toast('Split aggiornato'); },
+  'pac-asset'(fd, p, d, id) {
+    const name = String(fd.get('name') || '').trim().slice(0, 60); if (!name) throw new Error('Scrivi il nome dello strumento.');
+    const alloc = num(fd.get('alloc')), price = num(fd.get('price'));
+    const a = id ? d.assets.find(x => x.id === id) : { id: uid() }; if (!a) return;
+    Object.assign(a, { name, ticker: String(fd.get('ticker') || '').trim().toUpperCase().slice(0, 16), alloc: alloc == null ? 0 : Math.min(100, Math.max(0, alloc)) });
+    if (price != null && price > 0 && price !== a.price) { a.price = price; a.priceDate = ymd(); }
+    if (!id) d.assets.push(a); pacSnap(d); commit('p_' + p.id); toast(id ? 'Strumento aggiornato' : 'Strumento aggiunto');
+  },
+  'pac-contrib'(fd, p, d) {
+    const amount = num(fd.get('amount')); if (amount == null || amount <= 0) throw new Error('Inserisci l\'importo versato.');
+    const fees = Math.max(0, num(fd.get('fees')) || 0), price = num(fd.get('price')); let qty = num(fd.get('qty'));
+    if ((qty == null || qty <= 0) && price && price > 0) qty = Math.round((amount - fees) / price * 1e6) / 1e6;
+    const assetId = fd.get('asset'), a = d.assets.find(x => x.id === assetId); if (!a) throw new Error('Scegli lo strumento.');
+    const date = normDate(fd.get('date'));
+    d.contribs.push({ id: uid(), date, assetId, amount: Math.round(amount * 100) / 100, fees, price: price && price > 0 ? price : null, qty: qty && qty > 0 ? qty : null, note: String(fd.get('note') || '').trim().slice(0, 200) });
+    if (price && price > 0 && (!a.priceDate || date >= a.priceDate)) { a.price = price; a.priceDate = date; }
+    pacSnap(d); commit('p_' + p.id); toast(`Versamento registrato · ${eur(amount)}`);
+  },
   goal(fd, p, d) { const title = String(fd.get('title') || '').trim(); if (!title) throw new Error('Scrivi l\'obiettivo.'); d.goals.push({ id: uid(), title, area: String(fd.get('area') || '').trim(), due: fd.get('due') || '', progress: 0 }); commit('p_' + p.id); toast('Obiettivo aggiunto'); },
   task(fd, p, d) { const title = String(fd.get('title') || '').trim(); if (!title) throw new Error('Scrivi l\'attività.'); d.tasks.push({ id: uid(), title, area: String(fd.get('area') || '').trim(), due: fd.get('due') || '', done: false }); commit('p_' + p.id); toast('Attività aggiunta'); },
   metric(fd, p, d) { const name = String(fd.get('name') || '').trim(); if (!name) throw new Error('Scrivi cosa misuri.'); d.metric = { name: name.slice(0, 40), unit: String(fd.get('unit') || '').trim().slice(0, 16) }; commit('p_' + p.id); toast('Contatore aggiornato'); },
@@ -1904,6 +2044,8 @@ const DEL = {
   habit: (d, id) => { d.habits = d.habits.filter(x => x.id !== id); },
   rule: (d, id) => { d.rules = d.rules.filter(x => x.id !== id); },
   entry: (d, id) => { d.entries = d.entries.filter(x => x.id !== id); },
+  contrib: (d, id) => { d.contribs = d.contribs.filter(x => x.id !== id); pacSnap(d); },
+  asset: (d, id) => { d.assets = d.assets.filter(x => x.id !== id); d.contribs = d.contribs.filter(x => x.assetId !== id); pacSnap(d); },
 };
 function toggleHabit(d, id, date = ymd()) {
   const arr = d.checks[date] || [], has = arr.includes(id);
@@ -1931,9 +2073,7 @@ document.addEventListener('click', e => {
     case 'planet-del': arm(b, () => { const p = planet(pid); D.planets.list = D.planets.list.filter(x => x.id !== pid); delete D['p_' + pid]; normalizeRings(); commit('planets'); commit('p_' + pid); sheet.close(); if (ui.open === pid) closePanel(); render(); toast(`${p ? p.name : 'Pianeta'} eliminato`); }, 'Conferma: elimina tutto'); break;
     case 'sheet': openSheet(b.dataset.kind, pid || '', id || '', b.dataset.date || ''); break;
     case 'sheet-close': sheet.close(); break;
-    case 'lift-add': $('#lifts').insertAdjacentHTML('beforeend', liftRow()); break;
-    case 'lift-del': b.closest('.lift').remove(); break;
-    case 'del': arm(b, () => { DEL[b.dataset.kind](d, id); const row = b.closest('tr, .row, .topic, .goal, .exam, li, .chip, .card'); if (row) row.remove(); commit('p_' + pid); render(); toast('Eliminato'); }); break;
+    case 'del': arm(b, () => { DEL[b.dataset.kind](d, id); if (b.closest('dialog')) sheet.close(); else { const row = b.closest('tr, .row, .topic, .goal, .exam, li, .chip, .card'); if (row) row.remove(); } commit('p_' + pid); render(); toast('Eliminato'); }, b.dataset.kind === 'asset' ? 'Elimina anche i suoi versamenti?' : undefined); break;
     case 'habit': flip(b); toggleHabit(d, id); commit('p_' + pid); render(); break;
     case 'task': { const t = d.tasks.find(x => x.id === id); if (!t) return; flip(b); t.done = !t.done; t.doneAt = t.done ? ymd() : ''; commit('p_' + pid); render(); if (t.done) toast('Fatto'); break; }
     case 'topic-cycle': { const t = d.topics.find(x => x.id === id); if (!t) return; t.status = { todo: 'doing', doing: 'done', done: 'todo' }[t.status] || 'doing'; b.className = 'st st-' + t.status; b.textContent = STATUS[t.status]; const row = b.closest('.topic'); if (row) row.classList.toggle('is-done', t.status === 'done'); commit('p_' + pid); render(); break; }
@@ -1957,7 +2097,6 @@ document.addEventListener('click', e => {
       if (min >= 1 && pd(t.pid)) { addStudy(t.pid, t.courseId, min); toast(`${fmtMin(min)} di ${courseName(pd(t.pid), t.courseId)} salvati`); } else toast('Sessione sotto il minuto: non salvata');
       render(); break;
     }
-    case 'log-next': { const nx = nextSplit(d); if (!nx) return; d.sessions.push({ id: uid(), date: ymd(), day: nx, lifts: [], note: '' }); commit('p_' + pid); render(); toast(`${nx} registrato`); break; }
   }
 });
 document.addEventListener('submit', e => {
@@ -1974,7 +2113,6 @@ document.addEventListener('submit', e => {
     case 'habit': d.habits.push({ id: uid(), name: val.slice(0, 60) }); break;
     case 'tag': if (!d.tags.includes(val.slice(0, 30))) d.tags.push(val.slice(0, 30)); break;
     case 'pv': { const v = num(f.querySelector('[name=val]').value); if (v == null || v <= 0) { toast('Inserisci il valore del punto, es. 20'); return; } d.settings.pointValues[val.toUpperCase().slice(0, 24)] = v; break; }
-    case 'weight': { const kg = num(val); if (kg == null || kg < 30 || kg > 250) { toast('Inserisci un peso in kg, es. 72,4'); return; } d.weights = d.weights.filter(w => w.date !== ymd()); d.weights.push({ date: ymd(), kg: Math.round(kg * 10) / 10 }); toast('Peso registrato'); break; }
     case 'study-manual': { const m = num(val), sel = $('#timerCourse-' + pid); if (!m || m <= 0 || m > 720 || !sel) { toast('Inserisci i minuti, es. 45'); return; } addStudy(pid, sel.value, m); toast(`${fmtMin(m)} aggiunti a ${courseName(d, sel.value)}`); break; }
     case 'metric': { const unit = (f.querySelector('[name=unit]').value || '').trim(); d.metric = { name: val.slice(0, 40), unit: unit.slice(0, 16) }; break; }
     case 'entry': { const v = num(val); if (v == null) { toast('Inserisci un numero'); return; } const note = (f.querySelector('[name=note]').value || '').trim().slice(0, 200); d.entries.push({ id: uid(), date: ymd(), value: v, note }); if (d.entries.length > 3000) d.entries = d.entries.slice(-3000); toast('Registrato'); break; }
@@ -1994,6 +2132,7 @@ document.addEventListener('change', e => {
   const t = e.target, pid = t.dataset.p;
   if (t.dataset.goal && pid) commit('p_' + pid);
   else if (t.dataset.tf && t.dataset.tf !== 'q') { ui.tf[t.dataset.tf] = t.value; queuePanel(); }
+  else if (t.dataset.pacprice && pid) { const d = pd(pid), a = d && d.assets.find(x => x.id === t.dataset.pacprice), v = num(t.value); if (!a) return; if (v == null || v <= 0) { t.value = a.price != null ? String(a.price).replace('.', ',') : ''; toast('Inserisci un prezzo, es. 112,40'); return; } a.price = v; a.priceDate = ymd(); pacSnap(d); commit('p_' + pid); render(); toast('Prezzo aggiornato'); }
   else if (t.dataset.set && pid) { const v = num(t.value); pd(pid).settings[t.dataset.set] = v == null ? null : Math.abs(v); commit('p_' + pid); render(); }
 });
 document.addEventListener('keydown', e => {
