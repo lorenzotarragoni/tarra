@@ -948,15 +948,16 @@ function parseDur(v) { // "1:23:45" (YPT), "1:30", "1h30", "1h", "45m" or plain 
   return NaN;
 }
 const durStr = m => m ? `${Math.floor(m / 60)}:${pad(m % 60)}` : '';
-function studyStats(d) {
-  const today = ymd(), byDay = new Map(); d.sessions.forEach(s => byDay.set(s.date, (byDay.get(s.date) || 0) + (+s.min || 0)));
+function studyStats(d, courseId) {
+  const today = ymd(), byDay = new Map(); d.sessions.forEach(s => { if (!courseId || s.courseId === courseId) byDay.set(s.date, (byDay.get(s.date) || 0) + (+s.min || 0)); });
   const range = n => Array.from({ length: n }, (_, i) => ymd(addDays(new Date(), -i)));
   const tot = n => sum(range(n).map(ds => byDay.get(ds) || 0));
   const prev7 = sum(Array.from({ length: 7 }, (_, i) => byDay.get(ymd(addDays(new Date(), -7 - i))) || 0));
   let streak = 0, x = new Date(); if (!(byDay.get(today) > 0)) x = addDays(x, -1); while ((byDay.get(ymd(x)) || 0) > 0 && streak < 999) { streak++; x = addDays(x, -1); }
   let best = null; byDay.forEach((v, k) => { if (v > 0 && (!best || v > best.v)) best = { ds: k, v }; });
   const active30 = range(30).filter(ds => byDay.get(ds) > 0).length, goal = +d.studyGoal || 0;
-  return { today: byDay.get(today) || 0, w: tot(7), prev7, m: tot(30), avg7: tot(7) / 7, avg30Active: active30 ? tot(30) / active30 : 0, active30, streak, best, goal, goalDays7: goal ? range(7).filter(ds => (byDay.get(ds) || 0) >= goal).length : 0, byDay };
+  let all = 0, first = ''; byDay.forEach((v, k) => { all += v; if (v > 0 && (!first || k < first)) first = k; });
+  return { all, first, days: [...byDay.values()].filter(v => v > 0).length, today: byDay.get(today) || 0, w: tot(7), prev7, m: tot(30), avg7: tot(7) / 7, avg30Active: active30 ? tot(30) / active30 : 0, active30, streak, best, goal, goalDays7: goal ? range(7).filter(ds => (byDay.get(ds) || 0) >= goal).length : 0, byDay };
 }
 const tkey = t => t.date + (t.timeIn || t.time || '') + t.id;
 const STC = new WeakMap(); // sorted copy of a journal's trades, rebuilt only after the data changes
@@ -1229,9 +1230,9 @@ function drawChart(el) {
   else if (k === 'rdist') { const B = [['≤ −2', -Infinity, -2], ['−2/−1', -2, -1], ['−1/0', -1, 0], ['0/1', 0, 1], ['1/2', 1, 2], ['2/3', 2, 3], ['≥ 3', 3, Infinity]]; const rs = chartList(d, el.dataset.scope).map(t => tm(t).r).filter(r => r != null); barChart(el, B.map(([x, a, b]) => ({ x, v: rs.filter(r => r >= a && r < b).length, color: b <= 0 ? 'var(--bad)' : 'var(--good)', title: `${x} R` })), { h: 170, every: 1, fmt: v => String(v), label: 'Distribuzione dei multipli R', empty: 'Inserisci lo stop loss nei trade per vedere la distribuzione in R.' }); }
   else if (k === 'weekday') { const names = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'], v = Array(7).fill(0); chartList(d, el.dataset.scope).forEach(t => { v[(parseYmd(t.date).getDay() + 6) % 7] += t.pnl; }); const n = v[5] || v[6] ? 7 : 5; pnlBars(el, names.slice(0, n).map((x, i) => ({ x, v: Math.round(v[i] * 100) / 100, title: `${x} · ${eur(v[i], true)}` })), { every: 1, fmt: eurAxis, label: 'P&L per giorno della settimana', empty: 'Nessun trade nel periodo.' }); }
   else if (k === 'hour') { const m = new Map(); chartList(d, el.dataset.scope).forEach(t => { const h = parseInt(t.timeIn, 10); if (Number.isFinite(h)) m.set(h, (m.get(h) || 0) + t.pnl); }); const hs = [...m.keys()]; if (!hs.length) { el.innerHTML = '<div class="chart-empty">Inserisci l\'ora di entrata nei trade per vedere le fasce orarie migliori.</div>'; return; } const a = Math.min(...hs), b = Math.max(...hs); pnlBars(el, Array.from({ length: b - a + 1 }, (_, i) => { const h = a + i, v = m.get(h) || 0; return { x: `${h}`, v: Math.round(v * 100) / 100, title: `${pad(h)}:00–${pad(h)}:59 · ${eur(v, true)}` }; }), { every: 1, fmt: eurAxis, label: 'P&L per fascia oraria', empty: '' }); }
-  else if (k === 'study30') { const g = +d.studyGoal || 0, data = dailyBars(30, ds => minOn(d, ds)); data.forEach(x => { x.title = `${fmtDate(x.ds, { weekday: 'short', day: 'numeric', month: 'short' })} · ${fmtMin(x.v)}`; if (g && x.v >= g) x.color = 'var(--good)'; }); barChart(el, data, { h: 170, every: 5, fmt: v => v >= 60 ? Math.round(v / 60) + 'h' : Math.round(v) + 'm', label: 'Studio ultimi 30 giorni', empty: 'Registra le ore di YPT per vedere il grafico.' }); }
-  else if (k === 'studyWeeks') { const ws = weekStart(new Date()), data = Array.from({ length: 10 }, (_, i) => { const st = addDays(ws, -7 * (9 - i)); const v = sum(Array.from({ length: 7 }, (_, j) => minOn(d, ymd(addDays(st, j))))); return { x: String(isoWeek(st)), v, title: `Settimana ${isoWeek(st)} · ${fmtMin(v)}` }; }); barChart(el, data, { h: 150, every: 2, fmt: v => Math.round(v / 60) + 'h', label: 'Ore per settimana', empty: 'Ancora nessuna settimana registrata.' }); }
-  else if (k === 'studyWd') { const names = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'], tot = Array(7).fill(0), cnt = Array(7).fill(0); for (let i = 0; i < 56; i++) { const dt = addDays(new Date(), -i), w = (dt.getDay() + 6) % 7; tot[w] += minOn(d, ymd(dt)); cnt[w]++; } barChart(el, names.map((x, i) => ({ x, v: Math.round(tot[i] / (cnt[i] || 1)), title: `${x} · media ${fmtMin(Math.round(tot[i] / (cnt[i] || 1)))}` })), { h: 150, every: 1, fmt: v => v >= 60 ? (v / 60).toFixed(1).replace('.', ',') + 'h' : Math.round(v) + 'm', label: 'Media per giorno della settimana', empty: 'Servono un paio di settimane di dati.' }); }
+  else if (k === 'study30') { const cid = el.dataset.course || '', g = cid ? 0 : +d.studyGoal || 0, data = dailyBars(30, ds => minOn(d, ds, cid)); data.forEach(x => { x.title = `${fmtDate(x.ds, { weekday: 'short', day: 'numeric', month: 'short' })} · ${fmtMin(x.v)}`; if (g && x.v >= g) x.color = 'var(--good)'; }); barChart(el, data, { h: 170, every: 5, fmt: v => v >= 60 ? Math.round(v / 60) + 'h' : Math.round(v) + 'm', label: 'Studio ultimi 30 giorni', empty: 'Registra le ore di YPT per vedere il grafico.' }); }
+  else if (k === 'studyWeeks') { const cid = el.dataset.course || '', ws = weekStart(new Date()), data = Array.from({ length: 10 }, (_, i) => { const st = addDays(ws, -7 * (9 - i)); const v = sum(Array.from({ length: 7 }, (_, j) => minOn(d, ymd(addDays(st, j)), cid))); return { x: String(isoWeek(st)), v, title: `Settimana ${isoWeek(st)} · ${fmtMin(v)}` }; }); barChart(el, data, { h: 150, every: 2, fmt: v => Math.round(v / 60) + 'h', label: 'Ore per settimana', empty: 'Ancora nessuna settimana registrata.' }); }
+  else if (k === 'studyWd') { const cid = el.dataset.course || '', names = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'], tot = Array(7).fill(0), cnt = Array(7).fill(0); for (let i = 0; i < 56; i++) { const dt = addDays(new Date(), -i), w = (dt.getDay() + 6) % 7; tot[w] += minOn(d, ymd(dt), cid); cnt[w]++; } barChart(el, names.map((x, i) => ({ x, v: Math.round(tot[i] / (cnt[i] || 1)), title: `${x} · media ${fmtMin(Math.round(tot[i] / (cnt[i] || 1)))}` })), { h: 150, every: 1, fmt: v => v >= 60 ? (v / 60).toFixed(1).replace('.', ',') + 'h' : Math.round(v) + 'm', label: 'Media per giorno della settimana', empty: 'Servono un paio di settimane di dati.' }); }
   else if (k === 'study') { const data = dailyBars(14, ds => sum(d.sessions.filter(s => s.date === ds).map(s => +s.min || 0))); data.forEach(x => x.title = `${fmtDate(x.ds)} · ${fmtMin(x.v)}`); barChart(el, data, { h: 150, every: 2, fmt: v => v >= 60 ? (v / 60).toFixed(v % 60 ? 1 : 0).replace('.', ',') + 'h' : v + 'm', label: 'Minuti di studio, ultimi 14 giorni', empty: 'Nessuna sessione negli ultimi 14 giorni. Avvia il timer per iniziare a contare.' }); }
   else if (k === 'pacHist') { const h = pacHistory(d); dualChart(el, h, { h: 190, label: 'Valore e versato nel tempo', empty: 'Registra il primo versamento per vedere l\'andamento.' }); }
   else if (k === 'pacProj') { const pr = pacProjection(d); dualChart(el, pr.pts, { h: 190, label: 'Proiezione del piano', empty: 'Imposta il versamento mensile per vedere la proiezione.' }); }
@@ -1378,32 +1379,39 @@ function viewUni(p, d) {
       <button class="btn ${mine ? 'sunb' : 'primary'}" data-act="${mine ? 'timer-stop' : 'timer-start'}" data-p="${p.id}">${mine ? 'Stop e salva' : 'Avvia'}</button></div>
       <form class="inline" data-form="study-manual" data-p="${p.id}"><input id="studyMin-${p.id}" name="min" inputmode="numeric" placeholder="Minuti già studiati, per il corso selezionato" autocomplete="off"><button class="btn sm" type="submit">Aggiungi</button></form>` : '<p class="muted">Aggiungi un corso per usare il timer.</p>'}
     <div class="label" style="margin:16px 0 8px">Ultimi 14 giorni</div><div class="chart" data-chart="study" data-p="${p.id}"></div></section>`;
-  const sday = ui.studyDate || ymd(), ss = studyStats(d), delta = ss.prev7 ? Math.round((ss.w - ss.prev7) / ss.prev7 * 100) : null;
-  const perCourse = d.courses.map(c => ({ c, w: studyMin(d, c.id, 7), m: studyMin(d, c.id, 30) })), maxM = Math.max(1, ...perCourse.map(x => x.m));
+  const sday = ui.studyDate || ymd(), sc = d.courses.some(c => c.id === ui.studyCourse) ? ui.studyCourse : '', ss = studyStats(d, sc), delta = ss.prev7 ? Math.round((ss.w - ss.prev7) / ss.prev7 * 100) : null;
+  const ec = d.courses.some(c => c.id === ui.yptCourse) ? ui.yptCourse : (sc || (d.courses[0] || {}).id);
+  const hrs = m => (m / 60).toFixed(m >= 6000 ? 0 : 1).replace('.', ',');
+  const perCourse = d.courses.map(c => ({ c, w: studyMin(d, c.id, 7), m: studyMin(d, c.id, 30), all: sum(d.sessions.filter(s => s.courseId === c.id).map(s => +s.min || 0)) })), maxAll = Math.max(1, ...perCourse.map(x => x.all));
+  const dayRows = d.courses.map(c => ({ c, v: minOn(d, sday, c.id), y: yptOn(d, sday, c.id) })).filter(x => x.v);
   const studyCard = d.courses.length ? `<section class="card">
-    <div class="card-h"><div><h2>Ore di studio</h2><div class="label">Copia i totali di YPT a fine giornata · formato 1:30 oppure 90</div></div></div>
+    <div class="card-h"><div><h2>Ore di studio</h2><div class="label">${sc ? esc(courseName(d, sc)) : 'Tutte le materie'} · copia i totali di YPT a fine giornata</div></div>
+      <select id="scourse-${p.id}" data-scourse="1" data-p="${p.id}" aria-label="Materia" style="height:36px;max-width:220px"><option value="">Tutte le materie</option>${d.courses.map(c => `<option value="${c.id}" ${sc === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
     <section class="kpis" style="margin-bottom:14px">
-      ${kpi('Oggi', fmtMin(ss.today) || '0m', ss.goal && ss.today >= ss.goal ? 'pos' : '', ss.goal ? `obiettivo ${fmtMin(ss.goal)} · ${Math.min(100, Math.round(ss.today / ss.goal * 100))}%` : 'nessun obiettivo')}
-      ${kpi('7 giorni', fmtMin(ss.w) || '0m', '', `media ${fmtMin(Math.round(ss.avg7)) || '0m'} al giorno${delta != null ? ` · ${delta >= 0 ? '+' : '−'}${Math.abs(delta)}% vs sett. prima` : ''}`)}
-      ${kpi('30 giorni', fmtMin(ss.m) || '0m', '', `${ss.active30} giorni di studio · ${fmtMin(Math.round(ss.avg30Active)) || '0m'} nei giorni attivi`)}
-      ${kpi('Serie', `${ss.streak}<small> ${ss.streak === 1 ? 'giorno' : 'giorni'}</small>`, '', ss.goal ? `obiettivo centrato ${ss.goalDays7}/7 giorni` : 'giorni di fila con studio')}
+      ${kpi('Totale', `${hrs(ss.all)}<small> h</small>`, '', ss.first ? `dal ${esc(fmtDate(ss.first, { day: 'numeric', month: 'short', year: 'numeric' }))} · ${ss.days} ${ss.days === 1 ? 'giorno' : 'giorni'} di studio` : 'ancora nessuna ora')}
+      ${kpi('Oggi', fmtMin(ss.today), !sc && ss.goal && ss.today >= ss.goal ? 'pos' : '', !sc && ss.goal ? `obiettivo ${fmtMin(ss.goal)} · ${Math.min(100, Math.round(ss.today / ss.goal * 100))}%` : sc ? 'per questa materia' : 'nessun obiettivo')}
+      ${kpi('7 giorni', fmtMin(ss.w), '', `media ${fmtMin(Math.round(ss.avg7))} al giorno${delta != null ? ` · ${delta >= 0 ? '+' : '−'}${Math.abs(delta)}% vs sett. prima` : ''}`)}
+      ${kpi('30 giorni', fmtMin(ss.m), '', `${ss.active30} giorni · ${fmtMin(Math.round(ss.avg30Active))} nei giorni attivi`)}
+      ${kpi('Serie', `${ss.streak}<small> ${ss.streak === 1 ? 'giorno' : 'giorni'}</small>`, '', !sc && ss.goal ? `obiettivo centrato ${ss.goalDays7}/7 giorni` : 'giorni di fila con studio')}
       ${kpi('Giorno migliore', ss.best ? fmtMin(ss.best.v) : '—', '', ss.best ? esc(fmtDate(ss.best.ds, { day: 'numeric', month: 'long' })) : '')}
     </section>
     <div class="grid2" style="gap:16px">
       <form class="yptform" data-form="ypt-day" data-p="${p.id}">
         <div class="ypt-h"><label class="jfield" style="margin:0"><span>Giorno</span><input type="date" id="sday-${p.id}" data-sday="1" data-p="${p.id}" value="${sday}" max="${ymd()}"></label>
-          <label class="jfield" style="margin:0"><span>Obiettivo giornaliero</span><input id="sgoal-${p.id}" data-sgoal="1" data-p="${p.id}" value="${esc(durStr(+d.studyGoal || 0))}" placeholder="es. 4:00" autocomplete="off"></label></div>
-        ${d.courses.map(c => `<label class="yrow"><span>${esc(c.name)}</span><input name="c-${c.id}" id="ypt-${c.id}" value="${esc(durStr(yptOn(d, sday, c.id)))}" placeholder="0:00" inputmode="numeric" autocomplete="off"></label>`).join('')}
-        <div class="yrow total"><span>Totale del giorno</span><b>${fmtMin(minOn(d, sday)) || '0m'}</b></div>
-        <button class="btn primary" type="submit">${I.check}Salva ${sday === ymd() ? 'oggi' : esc(fmtDate(sday, { day: 'numeric', month: 'short' }))}</button>
-        <p class="muted" style="margin:2px 0 0">Se salvi di nuovo lo stesso giorno, i valori vengono sostituiti, non sommati.</p>
+          <label class="jfield" style="margin:0"><span>Materia</span><select id="ycourse-${p.id}" name="course" data-ycourse="1" data-p="${p.id}">${d.courses.map(c => `<option value="${c.id}" ${ec === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label></div>
+        <div class="ypt-h"><label class="jfield" style="margin:0"><span>Tempo su YPT</span><input id="ytime-${p.id}" name="time" value="${esc(durStr(yptOn(d, sday, ec)))}" placeholder="es. 2:15:40 oppure 90" inputmode="numeric" autocomplete="off"></label>
+          <button class="btn primary" type="submit" style="align-self:end;height:40px">${I.check}Salva</button></div>
+        <div class="label" style="margin-top:6px">${sday === ymd() ? 'Oggi' : esc(fmtDate(sday, { weekday: 'long', day: 'numeric', month: 'long' }))} · ${fmtMin(minOn(d, sday))}</div>
+        ${dayRows.length ? dayRows.map(x => `<div class="yrow"><span>${esc(x.c.name)}</span><b style="font-family:var(--f-mono)">${fmtMin(x.v)}</b></div>`).join('') : '<p class="muted" style="margin:0">Nessuna ora registrata in questo giorno.</p>'}
+        <p class="muted" style="margin:2px 0 0">Salvare di nuovo la stessa materia nello stesso giorno sostituisce il valore, non lo somma. Scrivi 0 per cancellarlo.</p>
+        <label class="jfield" style="margin:6px 0 0"><span>Obiettivo giornaliero (tutte le materie)</span><input id="sgoal-${p.id}" data-sgoal="1" data-p="${p.id}" value="${esc(durStr(+d.studyGoal || 0))}" placeholder="es. 4:00" autocomplete="off"></label>
       </form>
-      <div><div class="label" style="margin-bottom:8px">Per corso · 30 giorni</div>
-        <div class="rows">${perCourse.map(x => `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><span>${esc(x.c.name)}</span><span class="muted" style="font-family:var(--f-mono);font-size:11.5px;white-space:nowrap">7 g ${fmtMin(x.w) || '0m'} · 30 g ${fmtMin(x.m) || '0m'}</span></div><div class="meter" style="margin-top:8px"><i style="width:${Math.round(x.m / maxM * 100)}%"></i></div></div>`).join('')}</div></div>
+      <div><div class="label" style="margin-bottom:8px">Per materia · totale da sempre</div>
+        <div class="rows">${perCourse.map(x => `<div class="row" style="display:block;${sc && sc !== x.c.id ? 'opacity:.55' : ''}"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><span>${esc(x.c.name)}</span><b style="font-family:var(--f-mono)">${hrs(x.all)} h</b></div><div class="meter" style="margin-top:8px"><i style="width:${Math.round(x.all / maxAll * 100)}%"></i></div><div class="muted" style="font-family:var(--f-mono);font-size:11.5px;margin-top:6px">7 g ${fmtMin(x.w)} · 30 g ${fmtMin(x.m)}</div></div>`).join('')}</div></div>
     </div>
-    <div class="label" style="margin:18px 0 8px">Ultimi 30 giorni${ss.goal ? ' · in verde i giorni con obiettivo raggiunto' : ''}</div><div class="chart" data-chart="study30" data-p="${p.id}"></div>
-    <div class="grid2" style="margin-top:14px"><div><div class="label" style="margin-bottom:8px">Ore per settimana</div><div class="chart" data-chart="studyWeeks" data-p="${p.id}"></div></div>
-      <div><div class="label" style="margin-bottom:8px">Media per giorno della settimana · 8 settimane</div><div class="chart" data-chart="studyWd" data-p="${p.id}"></div></div></div>
+    <div class="label" style="margin:18px 0 8px">Ultimi 30 giorni${!sc && ss.goal ? ' · in verde i giorni con obiettivo raggiunto' : ''}</div><div class="chart" data-chart="study30" data-p="${p.id}" data-course="${sc}"></div>
+    <div class="grid2" style="margin-top:14px"><div><div class="label" style="margin-bottom:8px">Ore per settimana</div><div class="chart" data-chart="studyWeeks" data-p="${p.id}" data-course="${sc}"></div></div>
+      <div><div class="label" style="margin-bottom:8px">Media per giorno della settimana · 8 settimane</div><div class="chart" data-chart="studyWd" data-p="${p.id}" data-course="${sc}"></div></div></div>
   </section>` : '';
   return `<div class="view">
     <div class="vh"><p class="sub">Conto alla rovescia, programma per corso e ore di studio reali.</p><div class="actions"><button class="btn sm" data-act="sheet" data-kind="course" data-p="${p.id}">${I.plus}Corso</button><button class="btn sm primary" data-act="sheet" data-kind="exam" data-p="${p.id}">${I.plus}Prova</button></div></div>
@@ -1751,7 +1759,7 @@ function renderPanel() {
   const key = ui.open + '|' + (p && p.type === 'trading' ? ui.trTab : ''), same = body.dataset.for === key, scroll = body.scrollTop;
   // Views already built for the same data and the same choices are kept and swapped back in, so going back to a tab
   // or reopening a planet costs no HTML parsing, layout of new nodes or chart drawing.
-  const vkey = [dataRev, ymd(), ui.open, ui.trTab, JSON.stringify(ui.tf), ui.allTrades, ui.calMonth, ui.taskFilter, ui.jDate, ui.studyDate].join('§');
+  const vkey = [dataRev, ymd(), ui.open, ui.trTab, JSON.stringify(ui.tf), ui.allTrades, ui.calMonth, ui.taskFilter, ui.jDate, ui.studyDate, ui.studyCourse, ui.yptCourse].join('§');
   if (VCACHE.rev !== dataRev) { VCACHE.clear(); VCACHE.rev = dataRev; }
   if (body.dataset.vkey !== vkey) stashBody(body);
   LISTC.clear();
@@ -2220,11 +2228,12 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const kind = f.dataset.form, pid = f.dataset.p, d = pd(pid); if (!d) return;
   if (kind === 'ypt-day') {
-    const day = normDate((f.querySelector('[data-sday]') || {}).value || ymd()), rows = [];
-    for (const c of d.courses) { const el = f.elements['c-' + c.id], m = parseDur(el ? el.value : ''); if (Number.isNaN(m) || m > 1440) { toast(`Formato non valido per ${c.name}: usa 1:30 oppure 90`); el && el.focus(); return; } if (m > 0) rows.push({ id: uid(), courseId: c.id, date: day, min: m, src: 'ypt' }); }
-    d.sessions = d.sessions.filter(s => !(s.src === 'ypt' && s.date === day)).concat(rows);
+    const day = normDate((f.querySelector('[data-sday]') || {}).value || ymd()), cid = f.elements.course.value, c = d.courses.find(x => x.id === cid), m = parseDur(f.elements.time.value);
+    if (!c) return; if (Number.isNaN(m) || m > 1440) { toast('Formato non valido: usa 2:15:40, 1:30 oppure 90'); f.elements.time.focus(); return; }
+    d.sessions = d.sessions.filter(s => !(s.src === 'ypt' && s.date === day && s.courseId === cid));
+    if (m > 0) d.sessions.push({ id: uid(), courseId: cid, date: day, min: m, src: 'ypt' });
     if (d.sessions.length > 4000) d.sessions = d.sessions.slice(-4000);
-    commit('p_' + pid); render(); toast(`${day === ymd() ? 'Oggi' : fmtDate(day, { day: 'numeric', month: 'short' })}: ${fmtMin(sum(rows.map(r => r.min))) || '0m'} salvati`); return;
+    ui.yptCourse = cid; commit('p_' + pid); render(); toast(m > 0 ? `${c.name} · ${fmtMin(m)} salvati` : `${c.name}: ore del giorno cancellate`); return;
   }
   const inp = f.querySelector('input'), val = (inp && inp.value || '').trim();
   if (!val) return;
@@ -2256,6 +2265,8 @@ document.addEventListener('change', e => {
   if (t.dataset.goal && pid) commit('p_' + pid);
   else if (t.dataset.tf && t.dataset.tf !== 'q') { ui.tf[t.dataset.tf] = t.value; queuePanel(); }
   else if (t.dataset.pacprice && pid) { const d = pd(pid), a = d && d.assets.find(x => x.id === t.dataset.pacprice), v = num(t.value); if (!a) return; if (v == null || v <= 0) { t.value = a.price != null ? String(a.price).replace('.', ',') : ''; toast('Inserisci un prezzo, es. 112,40'); return; } a.price = v; a.priceDate = ymd(); pacSnap(d); commit('p_' + pid); render(); toast('Prezzo aggiornato'); }
+  else if (t.dataset.scourse) { ui.studyCourse = t.value; queuePanel(); }
+  else if (t.dataset.ycourse && pid) { ui.yptCourse = t.value; const tm = document.getElementById('ytime-' + pid), d = pd(pid); if (tm && d) tm.value = durStr(yptOn(d, ui.studyDate || ymd(), t.value)); }
   else if (t.dataset.sday) { ui.studyDate = t.value && t.value <= ymd() ? t.value : ymd(); queuePanel(); }
   else if (t.dataset.sgoal && pid) { const m = parseDur(t.value); if (Number.isNaN(m)) { toast('Scrivi l\'obiettivo come 4:00 oppure 240'); return; } pd(pid).studyGoal = m || null; commit('p_' + pid); render(); }
   else if (t.dataset.setcur && pid) { pd(pid).settings.currency = t.value; commit('p_' + pid); render(); }
