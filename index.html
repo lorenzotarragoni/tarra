@@ -370,6 +370,13 @@ h3{font:600 22px/1.15 var(--f-display);margin:0;text-wrap:balance}
 .st{font:600 10px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;border-radius:6px;padding:5px 7px;border:1px solid var(--line-2);background:transparent;color:var(--ink-3);cursor:pointer;flex:none;width:76px}
 .st-doing{color:var(--warn);background:var(--warn-soft);border-color:transparent}
 .st-done{color:var(--good);background:var(--good-soft);border-color:transparent}
+.yptform{display:flex;flex-direction:column;gap:8px}
+.ypt-h{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
+.yrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)}
+.yrow span{min-width:0;overflow-wrap:anywhere}
+.yrow input{width:96px;height:36px;text-align:right;font:500 14px var(--f-mono)}
+.yrow.total{border-bottom:0;font-weight:600}
+.chart[data-chart="study30"]{height:170px} .chart[data-chart="studyWeeks"],.chart[data-chart="studyWd"]{height:150px}
 .timer-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .timer-row select{flex:1;min-width:150px;height:40px;padding:0 10px}
 .clock{font:600 38px/1 var(--f-mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em;min-width:6ch;text-align:center}
@@ -740,7 +747,7 @@ const DEFAULT_TAGS = ['A+ setup', 'Paziente', 'FOMO', 'Entrata anticipata', 'Usc
 const RANGES = [[7, '7 g'], [30, '30 g'], [90, '90 g'], ['ytd', 'Anno'], [0, 'Tutto']];
 const TF0 = { range: 30, dir: '', res: '', setup: '', symbol: '', tag: '', q: '' };
 const TYPES = {
-  uni:     { label: 'Studio',      desc: 'Corsi, prove, argomenti e ore di studio',           def: () => ({ courses: [], exams: [], topics: [], sessions: [] }) },
+  uni:     { label: 'Studio',      desc: 'Corsi, prove, argomenti e ore di studio',           def: () => ({ courses: [], exams: [], topics: [], sessions: [], studyGoal: null }) },
   trading: { label: 'Trading',     desc: 'Journal completo: trade, giornale, statistiche',    def: () => ({ trades: [], days: {}, rules: [], tags: DEFAULT_TAGS.slice(), settings: { dailyLossLimit: null, startBalance: null, riskPct: null, maxTrades: null, pointValues: {} } }) },
   pac:     { label: 'Piano di accumulo', desc: 'Versamenti mensili, strumenti, rendimento e proiezione', def: () => ({ settings: { monthly: null, day: 1, start: '', rate: 6, years: 20, target: null }, assets: [], contribs: [], snaps: [] }) },
   goals:   { label: 'Obiettivi',   desc: 'Visione, obiettivi, abitudini, attività',           def: () => ({ vision: '', goals: [], habits: [], checks: {}, tasks: [] }) },
@@ -927,6 +934,30 @@ window.addEventListener('online', () => pull());
 const courseName = (d, id) => (d.courses.find(c => c.id === id) || {}).name || 'Corso';
 const upcomingExams = d => d.exams.filter(e => !e.done && daysUntil(e.date) >= 0).sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
 function studyMin(d, courseId, days = 7) { const from = ymd(addDays(new Date(), -(days - 1))); return sum(d.sessions.filter(s => (!courseId || s.courseId === courseId) && s.date >= from).map(s => +s.min || 0)); }
+// Study statistics. Daily totals copied from YPT are sessions with src 'ypt' (one per course per day); timer sessions add up with them.
+const minOn = (d, ds, courseId) => sum(d.sessions.filter(s => s.date === ds && (!courseId || s.courseId === courseId)).map(s => +s.min || 0));
+const yptOn = (d, ds, courseId) => sum(d.sessions.filter(s => s.src === 'ypt' && s.date === ds && s.courseId === courseId).map(s => +s.min || 0));
+function parseDur(v) { // "1:23:45" (YPT), "1:30", "1h30", "1h", "45m" or plain minutes -> minutes
+  const t = String(v || '').trim().toLowerCase().replace(/\s+/g, ''); if (!t) return 0;
+  let m;
+  if ((m = /^(\d{1,2}):(\d{1,2}):(\d{1,2})$/.exec(t))) return +m[1] * 60 + +m[2] + (+m[3] >= 30 ? 1 : 0);
+  if ((m = /^(\d{1,2}):(\d{1,2})$/.exec(t))) return +m[1] * 60 + +m[2];
+  if ((m = /^(\d{1,2})h(\d{1,2})?m?$/.exec(t))) return +m[1] * 60 + (+m[2] || 0);
+  if ((m = /^(\d{1,3})m(in)?$/.exec(t))) return +m[1];
+  if (/^\d{1,4}$/.test(t)) return +t;
+  return NaN;
+}
+const durStr = m => m ? `${Math.floor(m / 60)}:${pad(m % 60)}` : '';
+function studyStats(d) {
+  const today = ymd(), byDay = new Map(); d.sessions.forEach(s => byDay.set(s.date, (byDay.get(s.date) || 0) + (+s.min || 0)));
+  const range = n => Array.from({ length: n }, (_, i) => ymd(addDays(new Date(), -i)));
+  const tot = n => sum(range(n).map(ds => byDay.get(ds) || 0));
+  const prev7 = sum(Array.from({ length: 7 }, (_, i) => byDay.get(ymd(addDays(new Date(), -7 - i))) || 0));
+  let streak = 0, x = new Date(); if (!(byDay.get(today) > 0)) x = addDays(x, -1); while ((byDay.get(ymd(x)) || 0) > 0 && streak < 999) { streak++; x = addDays(x, -1); }
+  let best = null; byDay.forEach((v, k) => { if (v > 0 && (!best || v > best.v)) best = { ds: k, v }; });
+  const active30 = range(30).filter(ds => byDay.get(ds) > 0).length, goal = +d.studyGoal || 0;
+  return { today: byDay.get(today) || 0, w: tot(7), prev7, m: tot(30), avg7: tot(7) / 7, avg30Active: active30 ? tot(30) / active30 : 0, active30, streak, best, goal, goalDays7: goal ? range(7).filter(ds => (byDay.get(ds) || 0) >= goal).length : 0, byDay };
+}
 const tkey = t => t.date + (t.timeIn || t.time || '') + t.id;
 const STC = new WeakMap(); // sorted copy of a journal's trades, rebuilt only after the data changes
 const sortedTrades = d => { const c = STC.get(d); if (c && c.rev === dataRev && c.src === d.trades && c.n === d.trades.length) return c.list;
@@ -1198,6 +1229,9 @@ function drawChart(el) {
   else if (k === 'rdist') { const B = [['≤ −2', -Infinity, -2], ['−2/−1', -2, -1], ['−1/0', -1, 0], ['0/1', 0, 1], ['1/2', 1, 2], ['2/3', 2, 3], ['≥ 3', 3, Infinity]]; const rs = chartList(d, el.dataset.scope).map(t => tm(t).r).filter(r => r != null); barChart(el, B.map(([x, a, b]) => ({ x, v: rs.filter(r => r >= a && r < b).length, color: b <= 0 ? 'var(--bad)' : 'var(--good)', title: `${x} R` })), { h: 170, every: 1, fmt: v => String(v), label: 'Distribuzione dei multipli R', empty: 'Inserisci lo stop loss nei trade per vedere la distribuzione in R.' }); }
   else if (k === 'weekday') { const names = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'], v = Array(7).fill(0); chartList(d, el.dataset.scope).forEach(t => { v[(parseYmd(t.date).getDay() + 6) % 7] += t.pnl; }); const n = v[5] || v[6] ? 7 : 5; pnlBars(el, names.slice(0, n).map((x, i) => ({ x, v: Math.round(v[i] * 100) / 100, title: `${x} · ${eur(v[i], true)}` })), { every: 1, fmt: eurAxis, label: 'P&L per giorno della settimana', empty: 'Nessun trade nel periodo.' }); }
   else if (k === 'hour') { const m = new Map(); chartList(d, el.dataset.scope).forEach(t => { const h = parseInt(t.timeIn, 10); if (Number.isFinite(h)) m.set(h, (m.get(h) || 0) + t.pnl); }); const hs = [...m.keys()]; if (!hs.length) { el.innerHTML = '<div class="chart-empty">Inserisci l\'ora di entrata nei trade per vedere le fasce orarie migliori.</div>'; return; } const a = Math.min(...hs), b = Math.max(...hs); pnlBars(el, Array.from({ length: b - a + 1 }, (_, i) => { const h = a + i, v = m.get(h) || 0; return { x: `${h}`, v: Math.round(v * 100) / 100, title: `${pad(h)}:00–${pad(h)}:59 · ${eur(v, true)}` }; }), { every: 1, fmt: eurAxis, label: 'P&L per fascia oraria', empty: '' }); }
+  else if (k === 'study30') { const g = +d.studyGoal || 0, data = dailyBars(30, ds => minOn(d, ds)); data.forEach(x => { x.title = `${fmtDate(x.ds, { weekday: 'short', day: 'numeric', month: 'short' })} · ${fmtMin(x.v)}`; if (g && x.v >= g) x.color = 'var(--good)'; }); barChart(el, data, { h: 170, every: 5, fmt: v => v >= 60 ? Math.round(v / 60) + 'h' : Math.round(v) + 'm', label: 'Studio ultimi 30 giorni', empty: 'Registra le ore di YPT per vedere il grafico.' }); }
+  else if (k === 'studyWeeks') { const ws = weekStart(new Date()), data = Array.from({ length: 10 }, (_, i) => { const st = addDays(ws, -7 * (9 - i)); const v = sum(Array.from({ length: 7 }, (_, j) => minOn(d, ymd(addDays(st, j))))); return { x: String(isoWeek(st)), v, title: `Settimana ${isoWeek(st)} · ${fmtMin(v)}` }; }); barChart(el, data, { h: 150, every: 2, fmt: v => Math.round(v / 60) + 'h', label: 'Ore per settimana', empty: 'Ancora nessuna settimana registrata.' }); }
+  else if (k === 'studyWd') { const names = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'], tot = Array(7).fill(0), cnt = Array(7).fill(0); for (let i = 0; i < 56; i++) { const dt = addDays(new Date(), -i), w = (dt.getDay() + 6) % 7; tot[w] += minOn(d, ymd(dt)); cnt[w]++; } barChart(el, names.map((x, i) => ({ x, v: Math.round(tot[i] / (cnt[i] || 1)), title: `${x} · media ${fmtMin(Math.round(tot[i] / (cnt[i] || 1)))}` })), { h: 150, every: 1, fmt: v => v >= 60 ? (v / 60).toFixed(1).replace('.', ',') + 'h' : Math.round(v) + 'm', label: 'Media per giorno della settimana', empty: 'Servono un paio di settimane di dati.' }); }
   else if (k === 'study') { const data = dailyBars(14, ds => sum(d.sessions.filter(s => s.date === ds).map(s => +s.min || 0))); data.forEach(x => x.title = `${fmtDate(x.ds)} · ${fmtMin(x.v)}`); barChart(el, data, { h: 150, every: 2, fmt: v => v >= 60 ? (v / 60).toFixed(v % 60 ? 1 : 0).replace('.', ',') + 'h' : v + 'm', label: 'Minuti di studio, ultimi 14 giorni', empty: 'Nessuna sessione negli ultimi 14 giorni. Avvia il timer per iniziare a contare.' }); }
   else if (k === 'pacHist') { const h = pacHistory(d); dualChart(el, h, { h: 190, label: 'Valore e versato nel tempo', empty: 'Registra il primo versamento per vedere l\'andamento.' }); }
   else if (k === 'pacProj') { const pr = pacProjection(d); dualChart(el, pr.pts, { h: 190, label: 'Proiezione del piano', empty: 'Imposta il versamento mensile per vedere la proiezione.' }); }
@@ -1344,9 +1378,37 @@ function viewUni(p, d) {
       <button class="btn ${mine ? 'sunb' : 'primary'}" data-act="${mine ? 'timer-stop' : 'timer-start'}" data-p="${p.id}">${mine ? 'Stop e salva' : 'Avvia'}</button></div>
       <form class="inline" data-form="study-manual" data-p="${p.id}"><input id="studyMin-${p.id}" name="min" inputmode="numeric" placeholder="Minuti già studiati, per il corso selezionato" autocomplete="off"><button class="btn sm" type="submit">Aggiungi</button></form>` : '<p class="muted">Aggiungi un corso per usare il timer.</p>'}
     <div class="label" style="margin:16px 0 8px">Ultimi 14 giorni</div><div class="chart" data-chart="study" data-p="${p.id}"></div></section>`;
+  const sday = ui.studyDate || ymd(), ss = studyStats(d), delta = ss.prev7 ? Math.round((ss.w - ss.prev7) / ss.prev7 * 100) : null;
+  const perCourse = d.courses.map(c => ({ c, w: studyMin(d, c.id, 7), m: studyMin(d, c.id, 30) })), maxM = Math.max(1, ...perCourse.map(x => x.m));
+  const studyCard = d.courses.length ? `<section class="card">
+    <div class="card-h"><div><h2>Ore di studio</h2><div class="label">Copia i totali di YPT a fine giornata · formato 1:30 oppure 90</div></div></div>
+    <section class="kpis" style="margin-bottom:14px">
+      ${kpi('Oggi', fmtMin(ss.today) || '0m', ss.goal && ss.today >= ss.goal ? 'pos' : '', ss.goal ? `obiettivo ${fmtMin(ss.goal)} · ${Math.min(100, Math.round(ss.today / ss.goal * 100))}%` : 'nessun obiettivo')}
+      ${kpi('7 giorni', fmtMin(ss.w) || '0m', '', `media ${fmtMin(Math.round(ss.avg7)) || '0m'} al giorno${delta != null ? ` · ${delta >= 0 ? '+' : '−'}${Math.abs(delta)}% vs sett. prima` : ''}`)}
+      ${kpi('30 giorni', fmtMin(ss.m) || '0m', '', `${ss.active30} giorni di studio · ${fmtMin(Math.round(ss.avg30Active)) || '0m'} nei giorni attivi`)}
+      ${kpi('Serie', `${ss.streak}<small> ${ss.streak === 1 ? 'giorno' : 'giorni'}</small>`, '', ss.goal ? `obiettivo centrato ${ss.goalDays7}/7 giorni` : 'giorni di fila con studio')}
+      ${kpi('Giorno migliore', ss.best ? fmtMin(ss.best.v) : '—', '', ss.best ? esc(fmtDate(ss.best.ds, { day: 'numeric', month: 'long' })) : '')}
+    </section>
+    <div class="grid2" style="gap:16px">
+      <form class="yptform" data-form="ypt-day" data-p="${p.id}">
+        <div class="ypt-h"><label class="jfield" style="margin:0"><span>Giorno</span><input type="date" id="sday-${p.id}" data-sday="1" data-p="${p.id}" value="${sday}" max="${ymd()}"></label>
+          <label class="jfield" style="margin:0"><span>Obiettivo giornaliero</span><input id="sgoal-${p.id}" data-sgoal="1" data-p="${p.id}" value="${esc(durStr(+d.studyGoal || 0))}" placeholder="es. 4:00" autocomplete="off"></label></div>
+        ${d.courses.map(c => `<label class="yrow"><span>${esc(c.name)}</span><input name="c-${c.id}" id="ypt-${c.id}" value="${esc(durStr(yptOn(d, sday, c.id)))}" placeholder="0:00" inputmode="numeric" autocomplete="off"></label>`).join('')}
+        <div class="yrow total"><span>Totale del giorno</span><b>${fmtMin(minOn(d, sday)) || '0m'}</b></div>
+        <button class="btn primary" type="submit">${I.check}Salva ${sday === ymd() ? 'oggi' : esc(fmtDate(sday, { day: 'numeric', month: 'short' }))}</button>
+        <p class="muted" style="margin:2px 0 0">Se salvi di nuovo lo stesso giorno, i valori vengono sostituiti, non sommati.</p>
+      </form>
+      <div><div class="label" style="margin-bottom:8px">Per corso · 30 giorni</div>
+        <div class="rows">${perCourse.map(x => `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><span>${esc(x.c.name)}</span><span class="muted" style="font-family:var(--f-mono);font-size:11.5px;white-space:nowrap">7 g ${fmtMin(x.w) || '0m'} · 30 g ${fmtMin(x.m) || '0m'}</span></div><div class="meter" style="margin-top:8px"><i style="width:${Math.round(x.m / maxM * 100)}%"></i></div></div>`).join('')}</div></div>
+    </div>
+    <div class="label" style="margin:18px 0 8px">Ultimi 30 giorni${ss.goal ? ' · in verde i giorni con obiettivo raggiunto' : ''}</div><div class="chart" data-chart="study30" data-p="${p.id}"></div>
+    <div class="grid2" style="margin-top:14px"><div><div class="label" style="margin-bottom:8px">Ore per settimana</div><div class="chart" data-chart="studyWeeks" data-p="${p.id}"></div></div>
+      <div><div class="label" style="margin-bottom:8px">Media per giorno della settimana · 8 settimane</div><div class="chart" data-chart="studyWd" data-p="${p.id}"></div></div></div>
+  </section>` : '';
   return `<div class="view">
     <div class="vh"><p class="sub">Conto alla rovescia, programma per corso e ore di studio reali.</p><div class="actions"><button class="btn sm" data-act="sheet" data-kind="course" data-p="${p.id}">${I.plus}Corso</button><button class="btn sm primary" data-act="sheet" data-kind="exam" data-p="${p.id}">${I.plus}Prova</button></div></div>
     <section class="exams">${examCards}</section>
+    ${studyCard}
     <section class="grid2"><div class="stack">${courses || empty('Nessun corso', 'Aggiungi i corsi che segui per tracciare argomenti e studio.', `<button class="btn sm" data-act="sheet" data-kind="course" data-p="${p.id}">${I.plus}Corso</button>`)}</div><div class="stack">${timerCard}${pastHtml}</div></section>
   </div>`;
 }
@@ -1689,7 +1751,7 @@ function renderPanel() {
   const key = ui.open + '|' + (p && p.type === 'trading' ? ui.trTab : ''), same = body.dataset.for === key, scroll = body.scrollTop;
   // Views already built for the same data and the same choices are kept and swapped back in, so going back to a tab
   // or reopening a planet costs no HTML parsing, layout of new nodes or chart drawing.
-  const vkey = [dataRev, ymd(), ui.open, ui.trTab, JSON.stringify(ui.tf), ui.allTrades, ui.calMonth, ui.taskFilter, ui.jDate].join('§');
+  const vkey = [dataRev, ymd(), ui.open, ui.trTab, JSON.stringify(ui.tf), ui.allTrades, ui.calMonth, ui.taskFilter, ui.jDate, ui.studyDate].join('§');
   if (VCACHE.rev !== dataRev) { VCACHE.clear(); VCACHE.rev = dataRev; }
   if (body.dataset.vkey !== vkey) stashBody(body);
   LISTC.clear();
@@ -1704,7 +1766,7 @@ function renderPanel() {
   drawCharts();
 }
 function openPanel(id) {
-  if (ui.open !== id) { ui.allTrades = false; ui.tf = { ...TF0 }; ui.trTab = 'overview'; ui.jDate = ymd(); }
+  if (ui.open !== id) { ui.allTrades = false; ui.tf = { ...TF0 }; ui.trTab = 'overview'; ui.jDate = ymd(); ui.studyDate = ymd(); }
   ui.open = id;
   if (!renderHead()) { ui.open = null; return; }
   const body = $('#pvBody');
@@ -2157,6 +2219,13 @@ document.addEventListener('submit', e => {
   const f = e.target.closest('form[data-form]'); if (!f) return;
   e.preventDefault();
   const kind = f.dataset.form, pid = f.dataset.p, d = pd(pid); if (!d) return;
+  if (kind === 'ypt-day') {
+    const day = normDate((f.querySelector('[data-sday]') || {}).value || ymd()), rows = [];
+    for (const c of d.courses) { const el = f.elements['c-' + c.id], m = parseDur(el ? el.value : ''); if (Number.isNaN(m) || m > 1440) { toast(`Formato non valido per ${c.name}: usa 1:30 oppure 90`); el && el.focus(); return; } if (m > 0) rows.push({ id: uid(), courseId: c.id, date: day, min: m, src: 'ypt' }); }
+    d.sessions = d.sessions.filter(s => !(s.src === 'ypt' && s.date === day)).concat(rows);
+    if (d.sessions.length > 4000) d.sessions = d.sessions.slice(-4000);
+    commit('p_' + pid); render(); toast(`${day === ymd() ? 'Oggi' : fmtDate(day, { day: 'numeric', month: 'short' })}: ${fmtMin(sum(rows.map(r => r.min))) || '0m'} salvati`); return;
+  }
   const inp = f.querySelector('input'), val = (inp && inp.value || '').trim();
   if (!val) return;
   switch (kind) {
@@ -2187,6 +2256,8 @@ document.addEventListener('change', e => {
   if (t.dataset.goal && pid) commit('p_' + pid);
   else if (t.dataset.tf && t.dataset.tf !== 'q') { ui.tf[t.dataset.tf] = t.value; queuePanel(); }
   else if (t.dataset.pacprice && pid) { const d = pd(pid), a = d && d.assets.find(x => x.id === t.dataset.pacprice), v = num(t.value); if (!a) return; if (v == null || v <= 0) { t.value = a.price != null ? String(a.price).replace('.', ',') : ''; toast('Inserisci un prezzo, es. 112,40'); return; } a.price = v; a.priceDate = ymd(); pacSnap(d); commit('p_' + pid); render(); toast('Prezzo aggiornato'); }
+  else if (t.dataset.sday) { ui.studyDate = t.value && t.value <= ymd() ? t.value : ymd(); queuePanel(); }
+  else if (t.dataset.sgoal && pid) { const m = parseDur(t.value); if (Number.isNaN(m)) { toast('Scrivi l\'obiettivo come 4:00 oppure 240'); return; } pd(pid).studyGoal = m || null; commit('p_' + pid); render(); }
   else if (t.dataset.setcur && pid) { pd(pid).settings.currency = t.value; commit('p_' + pid); render(); }
   else if (t.dataset.set && pid) { const v = num(t.value); pd(pid).settings[t.dataset.set] = v == null ? null : Math.abs(v); commit('p_' + pid); render(); }
 });
