@@ -370,6 +370,9 @@ h3{font:600 22px/1.15 var(--f-display);margin:0;text-wrap:balance}
 .st{font:600 10px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;border-radius:6px;padding:5px 7px;border:1px solid var(--line-2);background:transparent;color:var(--ink-3);cursor:pointer;flex:none;width:76px}
 .st-doing{color:var(--warn);background:var(--warn-soft);border-color:transparent}
 .st-done{color:var(--good);background:var(--good-soft);border-color:transparent}
+.studyhero{display:flex;flex-direction:column;gap:6px;padding:16px 18px;margin-bottom:14px;border:1px solid color-mix(in srgb, var(--accent) 45%, transparent);background:linear-gradient(120deg, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%)}
+.studyhero b{font:600 44px/1 var(--f-display);font-variant-numeric:tabular-nums;color:var(--ink);letter-spacing:-.01em}
+.studyhero b small{font-size:20px;color:var(--ink-2);margin:0 4px 0 2px}
 .yptform{display:flex;flex-direction:column;gap:8px}
 .ypt-h{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
 .yrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)}
@@ -1002,7 +1005,7 @@ function mkTrade(o) {
 function planetStat(p) {
   const d = pd(p.id); if (!d) return '';
   switch (p.type) {
-    case 'uni': { const ex = upcomingExams(d)[0]; if (ex) { const n = daysUntil(ex.date); return `${courseName(d, ex.courseId)} · ${n === 0 ? 'oggi' : n === 1 ? 'domani' : 'tra ' + n + ' g'}`; } return `${fmtMin(studyMin(d, null))} in 7 g`; }
+    case 'uni': { const all = sum(d.sessions.map(s => +s.min || 0)), tot = all ? ` · ${(all / 60).toFixed(all >= 6000 ? 0 : 1).replace('.', ',')} h studiate` : ''; const ex = upcomingExams(d)[0]; if (ex) { const n = daysUntil(ex.date); return `${courseName(d, ex.courseId)} · ${n === 0 ? 'oggi' : n === 1 ? 'domani' : 'tra ' + n + ' g'}${tot}`; } return all ? `${(all / 60).toFixed(1).replace('.', ',')} h studiate in totale` : `${fmtMin(studyMin(d, null))} in 7 g`; }
     case 'trading': { markOutcomes(d); const m = monthTrades(d); return m.length ? `${usd(tradeStats(m).net, true)} nel mese` : 'nessun trade nel mese'; }
     case 'pac': { if (!d.contribs.length) return d.settings.monthly ? `${eur(d.settings.monthly)} al mese` : 'imposta il piano'; const s = pacStats(d); return `${eur(s.value)} · ${fmtPctS(s.gainPct)}`; }
     case 'goals': return `abitudini ${d.habits.filter(h => habitDone(d, h.id)).length}/${d.habits.length}`;
@@ -1387,8 +1390,8 @@ function viewUni(p, d) {
   const studyCard = d.courses.length ? `<section class="card">
     <div class="card-h"><div><h2>Ore di studio</h2><div class="label">${sc ? esc(courseName(d, sc)) : 'Tutte le materie'} · copia i totali di YPT a fine giornata</div></div>
       <select id="scourse-${p.id}" data-scourse="1" data-p="${p.id}" aria-label="Materia" style="height:36px;max-width:220px"><option value="">Tutte le materie</option>${d.courses.map(c => `<option value="${c.id}" ${sc === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+    <div class="studyhero"><span class="label">${sc ? 'Totale studiato · ' + esc(courseName(d, sc)) : 'Totale studiato'}</span><b>${Math.floor(ss.all / 60)}<small>h</small> ${pad(ss.all % 60)}<small>m</small></b><span class="muted">${ss.first ? `${hrs(ss.all)} ore in ${ss.days} ${ss.days === 1 ? 'giorno' : 'giorni'} di studio, dal ${esc(fmtDate(ss.first, { day: 'numeric', month: 'long', year: 'numeric' }))}` : 'Inserisci le ore di YPT qui sotto: il totale cresce giorno dopo giorno.'}</span></div>
     <section class="kpis" style="margin-bottom:14px">
-      ${kpi('Totale', `${hrs(ss.all)}<small> h</small>`, '', ss.first ? `dal ${esc(fmtDate(ss.first, { day: 'numeric', month: 'short', year: 'numeric' }))} · ${ss.days} ${ss.days === 1 ? 'giorno' : 'giorni'} di studio` : 'ancora nessuna ora')}
       ${kpi('Oggi', fmtMin(ss.today), !sc && ss.goal && ss.today >= ss.goal ? 'pos' : '', !sc && ss.goal ? `obiettivo ${fmtMin(ss.goal)} · ${Math.min(100, Math.round(ss.today / ss.goal * 100))}%` : sc ? 'per questa materia' : 'nessun obiettivo')}
       ${kpi('7 giorni', fmtMin(ss.w), '', `media ${fmtMin(Math.round(ss.avg7))} al giorno${delta != null ? ` · ${delta >= 0 ? '+' : '−'}${Math.abs(delta)}% vs sett. prima` : ''}`)}
       ${kpi('30 giorni', fmtMin(ss.m), '', `${ss.active30} giorni · ${fmtMin(Math.round(ss.avg30Active))} nei giorni attivi`)}
