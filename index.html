@@ -86,7 +86,6 @@ p{margin:0}
 @keyframes bb{from{transform:rotateZ(calc(var(--a0) * -1)) rotateX(calc(var(--tilt) * -1))}to{transform:rotateZ(calc(var(--a0) * -1 - 360deg)) rotateX(calc(var(--tilt) * -1))}}
 .world.static .arm,.world.static .bb{animation:none}
 .world.paused .arm,.world.paused .bb{animation-play-state:paused}
-@media (hover: hover){ .world:has(.planet:hover) .arm,.world:has(.planet:hover) .bb{animation-play-state:paused} }
 .sun:hover::before{background:var(--halo-hi)}
 .planet:hover .hud{opacity:1}
 .planet:hover .globe::before{opacity:1;box-shadow:inset 0 0 0 1.5px var(--hc)}
@@ -136,18 +135,33 @@ p{margin:0}
 .sphere .surf{position:absolute;top:0;left:0;width:200%;height:100%;background-image:var(--t-surf);background-size:50% 100%;background-repeat:repeat-x;animation:surf var(--surf, 40s) linear infinite}
 .sphere::after{content:"";position:absolute;inset:0;border-radius:50%;z-index:2;
   background:radial-gradient(circle at 32% 28%, rgba(255,255,255,.42), rgba(255,255,255,.05) 26%, transparent 42%), radial-gradient(circle at 62% 66%, transparent 34%, rgba(6,3,18,.62) 74%, rgba(4,2,12,.92) 100%)}
+.sphere .g3{position:absolute;inset:0;width:100%;height:100%;border-radius:50%}
+.sphere.live{background:none;overflow:visible}
+.sphere.live::before{display:none}
+.sphere.live::after{background:radial-gradient(circle, transparent 66%, color-mix(in srgb, var(--c) 30%, transparent) 71%, transparent 76%);inset:-6%}
 .sphere::before{content:"";position:absolute;inset:0;border-radius:50%;z-index:3;box-shadow:inset 0 0 calc(var(--r) * .35) color-mix(in srgb, var(--c) 60%, #fff), 0 0 0 1px rgba(255,255,255,.08) inset}
 /* gas giant ring: a flat annulus in a tilted plane; the 3D sort hides the part behind the sphere */
 .giant .tilt{transform:rotateX(74deg) rotateY(-16deg)}
 .giant .ringd{position:absolute;--rr:calc(var(--r) * 2.35);left:calc(var(--rr) * -1);top:calc(var(--rr) * -1);width:calc(var(--rr) * 2);height:calc(var(--rr) * 2);background-image:var(--t-ring);background-size:100% 100%;pointer-events:none;animation:spin 90s linear infinite}
 /* black hole */
-.hole .tilt{transform:rotateX(76deg) rotateY(8deg)}
+.hole .tilt{animation:wobH 17s ease-in-out infinite alternate}
+@keyframes wobH{from{transform:rotateX(78deg) rotateY(12deg)}to{transform:rotateX(66deg) rotateY(-10deg)}}
+.hole .lens{position:absolute;--lr:calc(var(--r) * 1.32);left:calc(var(--lr) * -1);top:calc(var(--lr) * -1);width:calc(var(--lr) * 2);height:calc(var(--lr) * 2);border-radius:50%;pointer-events:none;
+  background:radial-gradient(closest-side, transparent 60%, rgba(255,246,225,.95) 64%, rgba(255,196,120,.8) 72%, rgba(255,130,60,.35) 86%, transparent 100%);
+  -webkit-mask:linear-gradient(180deg, #000 0 40%, rgba(0,0,0,.08) 52%, rgba(0,0,0,.08) 60%, rgba(0,0,0,.55) 100%);mask:linear-gradient(180deg, #000 0 40%, rgba(0,0,0,.08) 52%, rgba(0,0,0,.08) 60%, rgba(0,0,0,.55) 100%)}
 .hole .disk{position:absolute;--dr:calc(var(--r) * 3.1);left:calc(var(--dr) * -1);top:calc(var(--dr) * -1);width:calc(var(--dr) * 2);height:calc(var(--dr) * 2);background-image:var(--t-disk);background-size:100% 100%;pointer-events:none;animation:spin 14s linear infinite}
 .hole .bh{position:absolute;left:calc(var(--r) * -.82);top:calc(var(--r) * -.82);width:calc(var(--r) * 1.64);height:calc(var(--r) * 1.64);border-radius:50%;background:#000;box-shadow:0 0 0 1px rgba(255,190,120,.25)}
 .hole .photon{position:absolute;--pr:calc(var(--r) * 1.45);left:calc(var(--pr) * -1);top:calc(var(--pr) * -1);width:calc(var(--pr) * 2);height:calc(var(--pr) * 2);background-image:var(--t-photon);background-size:100% 100%;pointer-events:none}
 .hole .glow{background:radial-gradient(closest-side, rgba(255,170,90,.32) calc(var(--r) * .9), rgba(255,120,70,.12) calc(var(--r) * 1.7), rgba(180,80,255,.05) calc(var(--r) * 2.6), transparent)}
 /* galaxy */
-.galaxy .tilt{transform:rotateX(62deg) rotateY(-24deg)}
+.galaxy .tilt{animation:wobG 21s ease-in-out infinite alternate}
+@keyframes wobG{from{transform:rotateX(66deg) rotateY(-30deg)}to{transform:rotateX(48deg) rotateY(14deg)}}
+.galaxy .gal.l2{transform:translateZ(calc(var(--r) * .32)) scale(.78);opacity:.5;animation-duration:75s}
+.galaxy .gal.l3{transform:translateZ(calc(var(--r) * -.32)) scale(.78);opacity:.5;animation-duration:75s}
+.galaxy .gal.l2,.galaxy .gal.l3{animation-name:spinZ}
+@keyframes spinZ{to{transform:translateZ(var(--z)) scale(.78) rotate(-360deg)}}
+.galaxy .gal.l2{--z:calc(var(--r) * .32)} .galaxy .gal.l3{--z:calc(var(--r) * -.32)}
+.galaxy .bulge{position:absolute;left:calc(var(--r) * -.62);top:calc(var(--r) * -.62);width:calc(var(--r) * 1.24);height:calc(var(--r) * 1.24);border-radius:50%;pointer-events:none;transform:rotateX(-90deg);background:radial-gradient(closest-side, rgba(255,250,240,.9), rgba(200,215,255,.35) 55%, transparent)}
 .galaxy .gal{position:absolute;--gr:calc(var(--r) * 3.3);left:calc(var(--gr) * -1);top:calc(var(--gr) * -1);width:calc(var(--gr) * 2);height:calc(var(--gr) * 2);background-image:var(--t-gal);background-size:100% 100%;pointer-events:none;animation:spin 60s linear infinite reverse}
 .galaxy .jet{position:absolute;left:-1.5px;top:calc(var(--r) * -3.6);width:3px;height:calc(var(--r) * 7.2);transform:rotateX(90deg);pointer-events:none;background:linear-gradient(180deg, transparent, rgba(200,225,255,.75) 30%, #fff 50%, rgba(200,225,255,.75) 70%, transparent)}
 .galaxy .nucleus{position:absolute;left:calc(var(--r) * -.75);top:calc(var(--r) * -.75);width:calc(var(--r) * 1.5);height:calc(var(--r) * 1.5);border-radius:50%;pointer-events:none;background:radial-gradient(closest-side, #fff 0, rgba(235,240,255,.95) 30%, rgba(160,190,255,.45) 62%, transparent)}
@@ -1271,11 +1285,7 @@ function art(kind, color, cssPx) {
   const c = document.createElement('canvas'), q = Math.PI * 2; let seed = 9001 + S; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const x = c.getContext('2d');
   if (kind === 'surf') { // gas giant bands, tileable horizontally (2:1)
-    c.width = S * 2; c.height = S;
-    const base = [[0, '#6B3F12'], [.08, '#C98A35'], [.16, '#F3D58F'], [.24, '#B9742A'], [.32, '#E8C06A'], [.42, '#FBE7B2'], [.5, '#D69C45'], [.58, '#F6DA98'], [.66, '#A9662A'], [.76, '#E7B964'], [.86, '#C1813A'], [1, '#5A3410']];
-    const g = x.createLinearGradient(0, 0, 0, S); base.forEach(([o, col]) => g.addColorStop(o, col)); x.fillStyle = g; x.fillRect(0, 0, S * 2, S);
-    x.globalAlpha = .18; for (let i = 0; i < 160; i++) { const y = rnd() * S, w = S * (.2 + rnd() * .9), h = 1 + rnd() * S * .02, xx = rnd() * S * 2; x.fillStyle = rnd() < .5 ? '#FFF2CF' : '#5A3008'; x.fillRect(xx, y, w, h); x.fillRect(xx - S * 2, y, w, h); }
-    x.globalAlpha = .55; const sx = S * .62, sy = S * .64; const sg = x.createRadialGradient(sx, sy, 0, sx, sy, S * .09); sg.addColorStop(0, '#E0703A'); sg.addColorStop(1, 'rgba(224,112,58,0)'); x.fillStyle = sg; x.beginPath(); x.ellipse(sx, sy, S * .12, S * .055, 0, 0, q); x.fill();
+    c.width = S * 2; c.height = S; paintSurf(x, S, rnd, q);
   } else if (kind === 'ring') { // planetary ring seen from above
     c.width = c.height = S; x.translate(S / 2, S / 2); const R = S / 2;
     for (let r = R * .58; r < R; r += .5) { const t = (r - R * .58) / (R * .42); const a = (.25 + .55 * Math.abs(Math.sin(t * 19 + Math.sin(t * 7) * 2))) * (t < .06 || t > .97 ? .2 : 1) * (t > .62 && t < .67 ? .12 : 1);
@@ -1308,11 +1318,68 @@ function art(kind, color, cssPx) {
   const url = `url(${c.toDataURL()})`; ART.set(key, url); return url;
 }
 const BODY = { trading: 'giant', uni: 'hole', goals: 'galaxy' };
+function paintSurf(x, S, rnd, q) {
+  const base = [[0, '#6B3F12'], [.08, '#C98A35'], [.16, '#F3D58F'], [.24, '#B9742A'], [.32, '#E8C06A'], [.42, '#FBE7B2'], [.5, '#D69C45'], [.58, '#F6DA98'], [.66, '#A9662A'], [.76, '#E7B964'], [.86, '#C1813A'], [1, '#5A3410']];
+  const g = x.createLinearGradient(0, 0, 0, S); base.forEach(([o, col]) => g.addColorStop(o, col)); x.fillStyle = g; x.fillRect(0, 0, S * 2, S);
+  x.globalAlpha = .18; for (let i = 0; i < 160; i++) { const y = rnd() * S, w = S * (.2 + rnd() * .9), h = 1 + rnd() * S * .02, xx = rnd() * S * 2; x.fillStyle = rnd() < .5 ? '#FFF2CF' : '#5A3008'; x.fillRect(xx, y, w, h); x.fillRect(xx - S * 2, y, w, h); }
+  x.globalAlpha = .55; const sx = S * .62, sy = S * .64; const sg = x.createRadialGradient(sx, sy, 0, sx, sy, S * .09); sg.addColorStop(0, '#E0703A'); sg.addColorStop(1, 'rgba(224,112,58,0)'); x.fillStyle = sg; x.beginPath(); x.ellipse(sx, sy, S * .12, S * .055, 0, 0, q); x.fill();
+}
+/* Real 3D gas giant: the banded map is wrapped on a sphere pixel by pixel (lookup tables built once),
+   spun around its axis and lit by the pulsar from wherever the planet is on its orbit. ~12k px per frame, 30 fps. */
+let GTEX = null; const GLOBES = [];
+function globeTex() {
+  if (GTEX) return GTEX; const H = 160, W = H * 2, c = document.createElement('canvas'); c.width = W; c.height = H;
+  let seed = 4242; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647; paintSurf(c.getContext('2d'), H, rnd, Math.PI * 2);
+  GTEX = { W, H, d: c.getContext('2d').getImageData(0, 0, W, H).data }; return GTEX;
+}
+function initGlobes() {
+  GLOBES.length = 0; const T = globeTex(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  orbitersEl.querySelectorAll('canvas.g3').forEach(cv => {
+    const pl = cv.closest('.planet'), arm = cv.closest('.arm'), r = parseFloat(pl.style.getPropertyValue('--r')) || 30, F = Math.max(24, Math.min(220, Math.round(r * 2 * dpr)));
+    cv.width = cv.height = F; const ctx = cv.getContext('2d'), img = ctx.createImageData(F, F), n = F * F;
+    const U = new Float32Array(n), V = new Int32Array(n), NX = new Float32Array(n), NY = new Float32Array(n), NZ = new Float32Array(n), A = new Float32Array(n), idx = [];
+    const tA = -0.42, ct = Math.cos(tA), st = Math.sin(tA); // axial tilt of the bands
+    for (let j = 0; j < F; j++) for (let i = 0; i < F; i++) {
+      const k = j * F + i, x = (i + .5 - F / 2) / (F / 2), y = (j + .5 - F / 2) / (F / 2), d2 = x * x + y * y; if (d2 > 1.02) continue;
+      const z = Math.sqrt(Math.max(0, 1 - d2)), bx = x * ct - y * st, by = x * st + y * ct; // body frame
+      U[k] = (Math.atan2(bx, z) / (2 * Math.PI) + 1) * T.W; V[k] = Math.min(T.H - 1, Math.max(0, Math.round((Math.asin(Math.max(-1, Math.min(1, by))) / Math.PI + .5) * (T.H - 1)))) * T.W;
+      NX[k] = x; NY[k] = y; NZ[k] = z; A[k] = Math.max(0, Math.min(1, (1 - Math.sqrt(d2)) * F / 2 + .5)); idx.push(k);
+    }
+    const anim = () => arm.getAnimations ? arm.getAnimations().find(a => a.animationName === 'orb') : null;
+    GLOBES.push({ cv, ctx, img, F, U, V, NX, NY, NZ, A, idx: Int32Array.from(idx), arm, anim, a0: parseFloat(arm.style.getPropertyValue('--a0')) || 0, spin: parseFloat(pl.style.getPropertyValue('--surf')) || 40 });
+  });
+  drawGlobes(performance.now(), true);
+}
+function armAngle(g) {
+  if (reduced) { const m = /rotateZ\(([-\d.]+)deg/.exec(g.arm.style.transform); return m ? +m[1] : g.a0; }
+  if (!g.a || g.a.playState === 'idle') g.a = g.anim(); const p = g.a && g.a.effect ? g.a.effect.getComputedTiming().progress : 0; return g.a0 + 360 * (p || 0);
+}
+function drawGlobes(now, force) {
+  const tilt = (base ? base.tiltDeg : 50) * Math.PI / 180, tex = GTEX;
+  for (const g of GLOBES) {
+    const a = armAngle(g) * Math.PI / 180; let lx = -Math.cos(a), ly = -Math.sin(a) * Math.cos(tilt), lz = -Math.sin(a) * Math.sin(tilt) + .12;
+    const ln = Math.hypot(lx, ly, lz) || 1; lx /= ln; ly /= ln; lz /= ln;
+    const sh = (now / 1000 / g.spin) * tex.W, d = g.img.data, td = tex.d, W = tex.W, { U, V, NX, NY, NZ, A, idx } = g;
+    for (let m = 0; m < idx.length; m++) {
+      const k = idx[m], u = ((U[k] + sh) % W) | 0, o = (V[k] + u) * 4, ndl = NX[k] * lx + NY[k] * ly + NZ[k] * lz;
+      const lit = Math.max(0, ndl), L = .2 + .95 * lit * (0.6 + 0.4 * NZ[k]) + Math.pow(Math.max(0, 1 - NZ[k]), 3) * lit * .9, p = k * 4;
+      d[p] = Math.min(255, td[o] * L + 12 * Math.pow(lit, 24)); d[p + 1] = Math.min(255, td[o + 1] * L + 10 * Math.pow(lit, 24)); d[p + 2] = Math.min(255, td[o + 2] * L * 1.04 + 18 * (1 - NZ[k]) * .5); d[p + 3] = 255 * A[k];
+    }
+    g.ctx.putImageData(g.img, 0, 0);
+  }
+}
+let globeLast = 0;
+(function globeLoop(now) {
+  requestAnimationFrame(globeLoop);
+  if (!GLOBES.length || document.hidden || now - globeLast < 33) return;
+  if (space.classList.contains('covered') || space.classList.contains('modal') || (reduced && globeLast)) return;
+  globeLast = now; drawGlobes(now);
+})(0);
 function bodyHtml(p, r) {
   const kind = BODY[p.type] || 'giant';
-  if (kind === 'giant') return `<span class="glow"></span><span class="tilt"><span class="ringd" style="--t-ring:${art('ring', '', r * 4.7)}"></span></span><span class="sphere" style="--t-surf:${art('surf', '', r * 2)}"><span class="surf"></span></span>`;
-  if (kind === 'hole') return `<span class="glow"></span><span class="tilt"><span class="disk" style="--t-disk:${art('disk', '', r * 6.2)}"></span></span><span class="bh"></span><span class="photon" style="--t-photon:${art('photon', '', r * 2.9)}"></span>`;
-  return `<span class="glow"></span><span class="tilt"><span class="gal" style="--t-gal:${art('gal', '', r * 6.6)}"></span><span class="jet"></span></span><span class="nucleus"></span>`;
+  if (kind === 'giant') return `<span class="glow"></span><span class="tilt"><span class="ringd" style="--t-ring:${art('ring', '', r * 4.7)}"></span></span><span class="sphere live"><canvas class="g3"></canvas></span>`;
+  if (kind === 'hole') return `<span class="glow"></span><span class="tilt"><span class="disk" style="--t-disk:${art('disk', '', r * 6.2)}"></span></span><span class="bh"></span><span class="lens"></span><span class="photon" style="--t-photon:${art('photon', '', r * 2.9)}"></span>`;
+  return `<span class="glow"></span><span class="tilt"><span class="gal" style="--t-gal:${art('gal', '', r * 6.6)}"></span><span class="gal l2" style="--t-gal:${art('gal', '', r * 6.6)}"></span><span class="gal l3" style="--t-gal:${art('gal', '', r * 6.6)}"></span><span class="bulge"></span><span class="jet"></span></span><span class="nucleus"></span>`;
 }
 const miniGlobe = (p, r, live = false) => `<span class="mini${live ? ' live' : ''}" style="--c:${esc(p.color)};--r:${r}px"></span>`;
 const dotOf = p => miniGlobe(p, 6);
@@ -1900,6 +1967,7 @@ function buildSystem() {
     });
     orbitersEl.innerHTML = html;
     orbitersEl.querySelectorAll('.planet').forEach(el => { const p = planet(el.dataset.p); el.querySelector('.lbl b').textContent = p.name; planetEls.set(p.id, el); });
+    initGlobes();
     orbitersEl.querySelectorAll('.car.enter').forEach(c => c.addEventListener('animationend', e => { if (e.target === c) c.classList.remove('enter'); }, { once: true }));
   }
   applyView(); updateLabels(); markSel();
